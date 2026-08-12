@@ -86,31 +86,16 @@
 <div><label>Домен</label><input name="ad_domain" value="{{ cfg.ad_domain }}" placeholder="DOMAIN"></div>
 <div><label>Base DN</label><input name="ad_base_dn" value="{{ cfg.ad_base_dn }}" placeholder="DC=domain,DC=ru"></div>
 <div><label>Фильтр</label><input name="ad_user_filter" value="{{ cfg.ad_user_filter }}"></div>
-<div>
-  <label>Группа администраторов · DN</label>
-  <input
-    name="ad_admin_group_dn"
-    value="{{ cfg.ad_admin_group_dn }}"
-    placeholder="CN=Birthday Mailer Admins,OU=Groups,DC=domain,DC=ru">
-</div>
-<div>
-  <label>Группа операторов · DN</label>
-  <input
-    name="ad_operator_group_dn"
-    value="{{ cfg.ad_operator_group_dn }}"
-    placeholder="CN=Birthday Mailer Operators,OU=Groups,DC=domain,DC=ru">
-</div>
 <div><label>Служебная УЗ</label><input name="ad_bind_user" value="{{ cfg.ad_bind_user }}"></div>
 <div><label>Пароль служебной УЗ</label><input type="password" name="ad_bind_password" placeholder="Не менять"></div>
 </div>
 <label class="check"><input type="checkbox" name="ad_enabled" {% if cfg.ad_enabled=="true" %}checked{% endif %}> Включить AD</label>
 <label class="check"><input type="checkbox" name="ad_ssl" {% if cfg.ad_ssl=="true" %}checked{% endif %}> LDAPS</label>
 <p class="muted small">
-  Роль определяется по членству в группах AD. Администратор имеет полный доступ.
-  Оператор работает с поздравлениями, должностями, текстами, фотобанком и журналом,
-  но не имеет доступа к системным настройкам и ручному импорту XLSX.
-  Вложенные группы AD поддерживаются. Локальная учетная запись администратора
-  сохраняется как аварийный вход.
+  Active Directory используется для поиска пользователей и проверки их доменного пароля.
+  Право доступа и роль назначаются администратором приложения в разделе «Пользователи».
+  Служебная учетная запись нужна для поиска по фамилии или логину; обычных прав чтения AD достаточно.
+  Локальная учетная запись администратора сохраняется как аварийный вход.
 </p>
 </div>
 

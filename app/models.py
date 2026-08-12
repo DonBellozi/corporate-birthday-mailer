@@ -18,6 +18,24 @@ class LocalUser(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+class ADAuthorizedUser(Base):
+    __tablename__ = "ad_authorized_users"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ad_guid: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    login: Mapped[str] = mapped_column(String(255), index=True)
+    display_name: Mapped[str] = mapped_column(String(500), default="")
+    distinguished_name: Mapped[str] = mapped_column(Text, default="")
+    role: Mapped[str] = mapped_column(String(20), default="operator")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    added_by: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
 class ImportRun(Base):
     __tablename__ = "import_runs"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

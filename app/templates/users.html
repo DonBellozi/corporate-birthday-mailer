@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Пользователи</h1>
+
+<div class="card">
+  <h2>Добавить пользователя из Active Directory</h2>
+  <p class="muted">
+    Введите фамилию, ФИО или доменный логин. Пароли пользователей здесь не хранятся:
+    при входе приложение проверяет их непосредственно в AD.
+  </p>
+
+  <form method="get" action="/users" class="ad-user-search">
+    <input
+      name="q"
+      value="{{ query }}"
+      placeholder="Иванов или ivanov.ii"
+      autocomplete="off"
+    >
+    <button type="submit">Найти в AD</button>
+  </form>
+
+  {% if search_error %}
+    <div class="alert error">{{ search_error }}</div>
+  {% endif %}
+
+  {% if search_results %}
+  <div class="ad-search-results">
+    {% for item in search_results %}
+    <div class="ad-search-result">
+      <div class="ad-search-identity">
+        <strong>{{ item.display_name }}</strong>
+        <span class="muted">{{ item.login }}</span>
+        {% if item.disabled %}
+          <span class="bad">Учетная запись AD отключена</span>
+        {% elif item.assigned_role %}
+          <span class="ok">
+            Уже добавлен:
+            {{ "Администратор" if item.assigned_role == "admin" else "Оператор" }}
+          </span>
+        {% endif %}
+      </div>
+
+      {% if not item.disabled %}
+      <div class="ad-search-actions">
+        <form method="post" action="/users/add">
+          <input type="hidden" name="ad_guid" value="{{ item.ad_guid }}">
+          <input type="hidden" name="login" value="{{ item.login }}">
+          <input type="hidden" name="display_name" value="{{ item.display_name }}">
+          <input type="hidden" name="distinguished_name" value="{{ item.distinguished_name }}">
+          <input type="hidden" name="role" value="operator">
+          <button type="submit">Оператор</button>
+        </form>
+
+        <form method="post" action="/users/add">
+          <input type="hidden" name="ad_guid" value="{{ item.ad_guid }}">
+          <input type="hidden" name="login" value="{{ item.login }}">
+          <input type="hidden" name="display_name" value="{{ item.display_name }}">
+          <input type="hidden" name="distinguished_name" value="{{ item.distinguished_name }}">
+          <input type="hidden" name="role" value="admin">
+          <button type="submit">Администратор</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% elif query and not search_error %}
+    <p class="muted">Совпадений в AD не найдено.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Доступ к системе</h2>
+
+  {% if items %}
+  <table>
+    <tr>
+      <th>Пользователь</th>
+      <th>Логин</th>
+      <th>Роль</th>
+      <th>Доступ</th>
+      <th></th>
+    </tr>
+
+    {% for item in items %}
+    <tr>
+      <td>{{ item.display_name or item.login }}</td>
+      <td>{{ item.login }}</td>
+      <td colspan="3">
+        <form method="post" action="/users/{{ item.id }}" class="ad-access-row">
+          <select name="role">
+            <option value="operator" {% if item.role == "operator" %}selected{% endif %}>Оператор</option>
+            <option value="admin" {% if item.role == "admin" %}selected{% endif %}>Администратор</option>
+          </select>
+
+          <label class="check">
+            <input type="checkbox" name="active" {% if item.active %}checked{% endif %}>
+            Разрешен
+          </label>
+
+          <button type="submit">Сохранить</button>
+        </form>
+
+        <form
+          method="post"
+          action="/users/{{ item.id }}/delete"
+          class="ad-access-delete"
+          onsubmit="return confirm('Удалить доступ для {{ item.login|e }}?');"
+        >
+          <button type="submit">Удалить доступ</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">
+    Доменные пользователи еще не добавлены. Аварийный локальный администратор продолжает работать.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

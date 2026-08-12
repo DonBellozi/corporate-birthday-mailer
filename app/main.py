@@ -12,10 +12,10 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from .db import Base, engine, get_db, SessionLocal
-from .models import LocalUser, ImportRun, PositionMapping, EmployeePositionChoice, IntroTemplate, Card, MailLog, AuditLog, EmployeeSnapshot
+from .models import LocalUser, ADAuthorizedUser, ImportRun, PositionMapping, EmployeePositionChoice, IntroTemplate, Card, MailLog, AuditLog, EmployeeSnapshot
 from .security import hash_password, verify_password
 from .settings_service import ensure_defaults, get_all_settings, set_settings
-from .ad_auth import authenticate_ad
+from .ad_auth import authenticate_ad, search_ad_users
 from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview, latest_successful_import, current_employee_states, blocked_employee_states, birthday_send_eligibility, compose_birthday_message, employee_position_conflicts
 from .mail_service import fetch_latest_xlsx, send_html_mail
 from .rendering import validate_template
@@ -97,7 +97,37 @@ def user_display_name(request):
     return request.session.get("display_name") or user_name(request)
 
 
+def _refresh_ad_session(request):
+    """
+    Для AD-пользователя роль проверяется на каждом защищенном запросе.
+    Поэтому отзыв доступа и смена роли начинают действовать сразу.
+    """
+    if request.session.get("auth_type") != "ad":
+        return
+
+    ad_guid = request.session.get("ad_guid", "")
+    if not ad_guid:
+        request.session.clear()
+        return
+
+    with SessionLocal() as db:
+        access = db.scalar(select(ADAuthorizedUser).where(
+            ADAuthorizedUser.ad_guid == ad_guid,
+            ADAuthorizedUser.active == True,
+        ))
+
+        if not access or access.role not in {"admin", "operator"}:
+            request.session.clear()
+            return
+
+        request.session["user"] = access.login
+        request.session["display_name"] = access.display_name or access.login
+        request.session["role"] = access.role
+
+
 def require_user(request):
+    _refresh_ad_session(request)
+
     user = user_name(request)
     role = user_role(request)
     if not user or not role:
@@ -132,8 +162,11 @@ def health():
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, db: Session = Depends(get_db)):
-    if not user_name(request) or not user_role(request):
-        request.session.clear()
+    if not user_name(request):
+        return RedirectResponse("/login", 303)
+    try:
+        require_user(request)
+    except HTTPException:
         return RedirectResponse("/login", 303)
     latest = db.scalars(select(ImportRun).order_by(desc(ImportRun.received_at))).first()
     active_snapshot = latest_successful_import(db)
@@ -192,11 +225,31 @@ def login_post(request: Request, login: str = Form(...), password: str = Form(..
 
     ok, result = authenticate_ad(login, password, get_all_settings(db))
     if ok:
+        access = db.scalar(select(ADAuthorizedUser).where(
+            ADAuthorizedUser.ad_guid == result["ad_guid"],
+            ADAuthorizedUser.active == True,
+        ))
+
+        if not access or access.role not in {"admin", "operator"}:
+            return page(
+                request,
+                "login.html",
+                error="Учетная запись AD не имеет доступа к системе.",
+            )
+
+        # AD мог изменить ФИО или логин. Обновляем локальную карточку,
+        # не меняя назначенную администратором роль.
+        access.login = result["login"]
+        access.display_name = result.get("display_name") or result["login"]
+        access.distinguished_name = result.get("distinguished_name", "")
+        db.commit()
+
         request.session.clear()
-        request.session["user"] = result["login"]
-        request.session["display_name"] = result.get("display_name") or result["login"]
+        request.session["user"] = access.login
+        request.session["display_name"] = access.display_name or access.login
         request.session["auth_type"] = "ad"
-        request.session["role"] = result["role"]
+        request.session["ad_guid"] = access.ad_guid
+        request.session["role"] = access.role
         return RedirectResponse("/", 303)
 
     return page(
@@ -209,6 +262,163 @@ def login_post(request: Request, login: str = Form(...), password: str = Form(..
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", 303)
+
+def _authorized_users(db):
+    return list(db.scalars(
+        select(ADAuthorizedUser).order_by(
+            ADAuthorizedUser.active.desc(),
+            ADAuthorizedUser.display_name,
+            ADAuthorizedUser.login,
+        )
+    ).all())
+
+
+@app.get("/users", response_class=HTMLResponse)
+def users_page(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+):
+    require_admin(request)
+
+    search_results = []
+    search_error = None
+    query = (q or "").strip()
+
+    if query:
+        try:
+            search_results = search_ad_users(
+                query,
+                get_all_settings(db),
+                limit=20,
+            )
+        except Exception as exc:
+            search_error = str(exc)
+
+    assigned_by_guid = {
+        item.ad_guid: item
+        for item in _authorized_users(db)
+    }
+
+    for item in search_results:
+        assigned = assigned_by_guid.get(item["ad_guid"])
+        item["assigned_role"] = assigned.role if assigned else ""
+        item["assigned_active"] = assigned.active if assigned else False
+
+    return page(
+        request,
+        "users.html",
+        items=_authorized_users(db),
+        search_results=search_results,
+        search_error=search_error,
+        query=query,
+        message=None,
+    )
+
+
+@app.post("/users/add", response_class=HTMLResponse)
+async def users_add(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    actor = require_admin(request)
+    form = await request.form()
+
+    ad_guid = str(form.get("ad_guid", "")).strip()
+    login = str(form.get("login", "")).strip()
+    display_name = str(form.get("display_name", "")).strip()
+    distinguished_name = str(form.get("distinguished_name", "")).strip()
+    role = str(form.get("role", "operator")).strip()
+
+    if role not in {"admin", "operator"}:
+        role = "operator"
+
+    if not ad_guid or not login:
+        raise HTTPException(400, "Некорректная учетная запись AD")
+
+    item = db.scalar(select(ADAuthorizedUser).where(
+        ADAuthorizedUser.ad_guid == ad_guid,
+    ))
+
+    if item:
+        item.login = login
+        item.display_name = display_name or login
+        item.distinguished_name = distinguished_name
+        item.role = role
+        item.active = True
+    else:
+        item = ADAuthorizedUser(
+            ad_guid=ad_guid,
+            login=login,
+            display_name=display_name or login,
+            distinguished_name=distinguished_name,
+            role=role,
+            active=True,
+            added_by=actor,
+        )
+        db.add(item)
+
+    db.add(AuditLog(
+        actor=actor,
+        action="ad_user_access_granted",
+        details=f"{login}; role={role}",
+    ))
+    db.commit()
+    return RedirectResponse("/users", 303)
+
+
+@app.post("/users/{item_id}", response_class=HTMLResponse)
+async def users_update(
+    item_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    actor = require_admin(request)
+    item = db.get(ADAuthorizedUser, item_id)
+    if not item:
+        raise HTTPException(404)
+
+    form = await request.form()
+    role = str(form.get("role", item.role)).strip()
+    if role not in {"admin", "operator"}:
+        role = "operator"
+
+    item.role = role
+    item.active = "active" in form
+
+    db.add(AuditLog(
+        actor=actor,
+        action="ad_user_access_changed",
+        details=(
+            f"{item.login}; role={item.role}; "
+            f"active={'yes' if item.active else 'no'}"
+        ),
+    ))
+    db.commit()
+    return RedirectResponse("/users", 303)
+
+
+@app.post("/users/{item_id}/delete")
+def users_delete(
+    item_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    actor = require_admin(request)
+    item = db.get(ADAuthorizedUser, item_id)
+    if not item:
+        raise HTTPException(404)
+
+    details = f"{item.login}; role={item.role}"
+    db.delete(item)
+    db.add(AuditLog(
+        actor=actor,
+        action="ad_user_access_removed",
+        details=details,
+    ))
+    db.commit()
+    return RedirectResponse("/users", 303)
+
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, db: Session = Depends(get_db)):
