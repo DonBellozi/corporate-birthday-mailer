@@ -10,8 +10,8 @@
 {% for row in rows %}
 {% set x = row.item %}
 {% set s = row.suggestion %}
-<div class="card">
-<form method="post" action="/positions/{{ x.id }}">
+<div class="card position-card">
+<form method="post" action="/positions/{{ x.id }}" class="position-form">
   <div class="source">{{ x.source_position }}</div>
 
   <label>Для поздравления · мужской род, именительный падеж</label>
@@ -19,7 +19,7 @@
          value="{{ row.input_value }}"
          placeholder="Не удалось определить автоматически">
 
-  <div class="muted small">
+  <div class="muted small position-status">
     {% if x.confirmed %}
       <span class="ok">✓ Подтверждено вручную</span>
     {% elif s.auto_use %}
@@ -39,7 +39,7 @@
     Использовать должность
   </label>
 
-  <button type="submit">{{ "Сохранить" if x.confirmed else "Подтвердить / изменить" }}</button>
+  <button type="submit" class="position-save">{{ "Сохранить" if x.confirmed else "Подтвердить / изменить" }}</button>
 </form>
 </div>
 {% endfor %}
@@ -47,4 +47,61 @@
 {% if not rows %}
 <div class="card muted">Появятся после первого импорта XLSX.</div>
 {% endif %}
+
+<script>
+(() => {
+  document.querySelectorAll(".position-form").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const button = form.querySelector(".position-save");
+      const status = form.querySelector(".position-status");
+      const input = form.querySelector('input[name="display_position"]');
+
+      const oldButtonText = button.textContent;
+      button.disabled = true;
+      button.textContent = "Сохраняем...";
+
+      try {
+        const response = await fetch(form.action, {
+          method: "POST",
+          body: new FormData(form),
+          credentials: "same-origin",
+          redirect: "follow"
+        });
+
+        if (!response.ok) {
+          throw new Error(`Ошибка HTTP ${response.status}`);
+        }
+
+        const value = (input.value || "").trim();
+
+        if (value) {
+          status.innerHTML = '<span class="ok">✓ Подтверждено вручную</span>';
+          button.textContent = "Сохранено";
+        } else {
+          status.innerHTML = '<span class="bad">○ Требует настройки</span>';
+          button.textContent = "Сохранено";
+        }
+
+        form.classList.add("saved");
+        setTimeout(() => {
+          button.textContent = "Сохранить";
+          form.classList.remove("saved");
+        }, 1200);
+
+      } catch (error) {
+        button.textContent = oldButtonText;
+        status.insertAdjacentHTML(
+          "beforeend",
+          '<div class="bad">Не удалось сохранить. Попробуйте еще раз.</div>'
+        );
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+})();
+</script>
+
 {% endblock %}
