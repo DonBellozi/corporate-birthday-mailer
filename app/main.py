@@ -4,7 +4,7 @@ from pathlib import Path
 import os, shutil, uuid
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, select
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from .db import Base, engine, get_db, SessionLocal
-from .models import LocalUser, ImportRun, PositionMapping, IntroTemplate, MailLog, AuditLog, EmployeeSnapshot
+from .models import LocalUser, ImportRun, PositionMapping, IntroTemplate, Card, MailLog, AuditLog, EmployeeSnapshot
 from .security import hash_password, verify_password
 from .settings_service import ensure_defaults, get_all_settings, set_settings
 from .ad_auth import authenticate_ad
@@ -21,6 +21,7 @@ from .mail_service import fetch_latest_xlsx
 from .rendering import validate_template
 from .scheduler import start_scheduler
 from .position_suggester import suggest_position
+from .card_service import save_uploaded_card, delete_card_file, card_file_path, card_meta
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -227,6 +228,152 @@ async def positions_save(item_id: int, request: Request, db: Session = Depends(g
     db.add(AuditLog(actor=actor, action="position_changed", details=f"{item_id}: {item.display_position}"))
     db.commit()
     return RedirectResponse("/positions", 303)
+
+
+def _card_rows(db):
+    items = list(db.scalars(
+        select(Card).order_by(Card.active.desc(), Card.created_at.desc(), Card.id.desc())
+    ).all())
+    return [
+        {
+            "item": item,
+            "meta": card_meta(item.filename),
+        }
+        for item in items
+    ]
+
+
+@app.get("/cards", response_class=HTMLResponse)
+def cards_page(request: Request, db: Session = Depends(get_db)):
+    require_user(request)
+    cfg = get_all_settings(db)
+    return page(
+        request,
+        "cards.html",
+        rows=_card_rows(db),
+        cards_enabled=cfg.get("cards_enabled") == "true",
+        error=None,
+        message=None,
+    )
+
+
+@app.post("/cards/upload", response_class=HTMLResponse)
+async def cards_upload(
+    request: Request,
+    name: str = Form(""),
+    gender: str = Form("universal"),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    actor = require_user(request)
+    cfg = get_all_settings(db)
+
+    if gender not in {"male", "female", "universal"}:
+        gender = "universal"
+
+    try:
+        data = await file.read()
+        filename, meta = save_uploaded_card(data)
+        display_name = name.strip() or Path(file.filename or "Открытка").stem
+
+        item = Card(
+            name=display_name[:200],
+            gender=gender,
+            filename=filename,
+            active=True,
+            uploaded_by=actor,
+        )
+        db.add(item)
+        db.add(AuditLog(
+            actor=actor,
+            action="card_uploaded",
+            details=f"{display_name}; {meta['width']}x{meta['height']}",
+        ))
+        db.commit()
+
+        return page(
+            request,
+            "cards.html",
+            rows=_card_rows(db),
+            cards_enabled=cfg.get("cards_enabled") == "true",
+            error=None,
+            message="Изображение добавлено в фотобанк.",
+        )
+    except Exception as exc:
+        return page(
+            request,
+            "cards.html",
+            rows=_card_rows(db),
+            cards_enabled=cfg.get("cards_enabled") == "true",
+            error=str(exc),
+            message=None,
+        )
+
+
+@app.post("/cards/{item_id}")
+async def cards_save(item_id: int, request: Request, db: Session = Depends(get_db)):
+    actor = require_user(request)
+    item = db.get(Card, item_id)
+    if not item:
+        raise HTTPException(404)
+
+    form = await request.form()
+    gender = str(form.get("gender", "universal"))
+    if gender not in {"male", "female", "universal"}:
+        gender = "universal"
+
+    item.name = str(form.get("name", item.name)).strip()[:200] or item.name
+    item.gender = gender
+    item.active = "active" in form
+
+    db.add(AuditLog(
+        actor=actor,
+        action="card_changed",
+        details=f"{item.id}: {item.name}",
+    ))
+    db.commit()
+    return RedirectResponse("/cards", 303)
+
+
+@app.post("/cards/{item_id}/delete")
+def cards_delete(item_id: int, request: Request, db: Session = Depends(get_db)):
+    actor = require_user(request)
+    item = db.get(Card, item_id)
+    if not item:
+        raise HTTPException(404)
+
+    filename = item.filename
+    name = item.name
+    db.delete(item)
+    db.add(AuditLog(
+        actor=actor,
+        action="card_deleted",
+        details=name,
+    ))
+    db.commit()
+    delete_card_file(filename)
+    return RedirectResponse("/cards", 303)
+
+
+@app.get("/cards/{item_id}/image")
+def card_image(item_id: int, request: Request, db: Session = Depends(get_db)):
+    require_user(request)
+    item = db.get(Card, item_id)
+    if not item:
+        raise HTTPException(404)
+
+    path = card_file_path(item.filename)
+    meta = card_meta(item.filename)
+    if not path.exists() or not meta.get("exists"):
+        raise HTTPException(404, "Файл изображения отсутствует")
+
+    return FileResponse(
+        path,
+        media_type=meta.get("mime") or "application/octet-stream",
+        filename=None,
+    )
+
+
 
 @app.get("/templates", response_class=HTMLResponse)
 def templates_page(request: Request, db: Session = Depends(get_db)):

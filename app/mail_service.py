@@ -60,7 +60,7 @@ def fetch_latest_xlsx(cfg: dict[str, str], target_dir: Path):
         except Exception:
             pass
 
-def send_html_mail(cfg, subject, recipient, html_body, text_body=""):
+def send_html_mail(cfg, subject, recipient, html_body, text_body="", inline_image=None):
     host = cfg.get("smtp_host", "").strip()
     if not host:
         raise ValueError("SMTP не настроен")
@@ -77,6 +77,22 @@ def send_html_mail(cfg, subject, recipient, html_body, text_body=""):
     msg["Subject"] = subject
     msg.set_content(text_body or "Поздравление с Днем рождения")
     msg.add_alternative(html_body, subtype="html")
+
+    if inline_image:
+        path = Path(inline_image["path"])
+        data = path.read_bytes()
+        mime = inline_image.get("mime", "image/jpeg")
+        maintype, subtype = mime.split("/", 1)
+        cid = inline_image.get("cid", "birthday-card")
+        html_part = msg.get_payload()[-1]
+        html_part.add_related(
+            data,
+            maintype=maintype,
+            subtype=subtype,
+            cid=f"<{cid}>",
+            filename=inline_image.get("filename") or path.name,
+            disposition="inline",
+        )
 
     context = ssl.create_default_context()
     if use_ssl:

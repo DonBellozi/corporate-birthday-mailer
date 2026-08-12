@@ -84,7 +84,7 @@
       id="birthdayPreviewFrame"
       class="preview-frame"
       title="Предпросмотр письма"
-      sandbox=""
+      sandbox="allow-same-origin"
     ></iframe>
   </div>
 </div>
@@ -136,6 +136,13 @@
 
       if (data.intro_name) {
         info.push(`Текст: ${data.intro_name}`);
+      }
+
+      if (data.card_name) {
+        const orientation = data.card_orientation ? ` · ${data.card_orientation}` : "";
+        info.push(`Открытка: ${data.card_name}${orientation}`);
+      } else {
+        info.push("Открытка: не используется");
       }
 
       if (data.warning) {

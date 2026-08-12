@@ -58,7 +58,14 @@ def validate_template(template):
 def render_text(template, ctx):
     return VARIABLE_RE.sub(lambda m: ctx.get(m.group(1), m.group(0)), template)
 
-def email_html(intro_text, wish_text="", position="", gender="unknown"):
+def email_html(
+    intro_text,
+    wish_text="",
+    position="",
+    gender="unknown",
+    card_src="",
+    card_width=0,
+):
     if gender == "female":
         accent, text_color, bg = "#a84269", "#64364a", "#fff8fb"
     elif gender == "male":
@@ -80,6 +87,17 @@ def email_html(intro_text, wish_text="", position="", gender="unknown"):
             f'color:{text_color};">{html.escape(wish_text)}</td></tr>'
         )
 
+    card_block = ""
+    if card_src:
+        safe_src = html.escape(card_src, quote=True)
+        width = int(card_width or 520)
+        card_block = (
+            '<tr><td align="center" style="padding:2px 24px 28px 24px;">'
+            f'<img src="{safe_src}" width="{width}" alt="Поздравительная открытка" '
+            f'style="display:block;width:100%;max-width:{width}px;height:auto;border:0;outline:none;text-decoration:none;">'
+            '</td></tr>'
+        )
+
     return f"""<!doctype html>
 <html>
 <body style="margin:0;padding:0;background:{bg};font-family:Arial,Helvetica,sans-serif;">
@@ -90,8 +108,10 @@ def email_html(intro_text, wish_text="", position="", gender="unknown"):
 <tr><td style="padding:4px 34px 20px 34px;font-size:18px;line-height:1.6;color:{text_color};">{html.escape(intro_text)}</td></tr>
 {position_block}
 {wish_block}
+{card_block}
 </table>
 </td></tr>
 </table>
 </body>
 </html>"""
+

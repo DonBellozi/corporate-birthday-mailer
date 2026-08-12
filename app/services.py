@@ -1,15 +1,16 @@
 from datetime import date, datetime
 from pathlib import Path
-import random
+import hashlib
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from .models import EmployeeSnapshot, ImportRun, IntroTemplate, PositionMapping, WishTemplate, MailLog, AuditLog
+from .models import EmployeeSnapshot, ImportRun, IntroTemplate, PositionMapping, WishTemplate, Card, MailLog, AuditLog
 from .settings_service import get_all_settings
 from .xlsx_parser import parse_workbook
 from .rendering import variable_context, render_text, email_html
 from .mail_service import send_html_mail
 from .position_suggester import suggest_position
+from .card_service import card_file_path, card_meta, display_width
 
 def latest_successful_import(db):
     return db.scalars(
@@ -116,24 +117,51 @@ def upcoming_birthdays(db, days=30):
     result.sort(key=lambda item: (item["next_date"], item["employee"].fio))
     return result
 
-def choose_least_used(items):
+def choose_least_used(items, seed=""):
     if not items:
         return None
-    minimum = min(x.usage_count for x in items)
-    return random.choice([x for x in items if x.usage_count == minimum])
 
-def choose_intro(db):
+    minimum = min(x.usage_count for x in items)
+    candidates = sorted(
+        [x for x in items if x.usage_count == minimum],
+        key=lambda x: x.id,
+    )
+
+    if not seed or len(candidates) == 1:
+        return candidates[0]
+
+    digest = hashlib.sha256(str(seed).encode("utf-8")).digest()
+    index = int.from_bytes(digest[:8], "big") % len(candidates)
+    return candidates[index]
+
+
+def choose_intro(db, seed=""):
     return choose_least_used(list(db.scalars(
         select(IntroTemplate).where(IntroTemplate.active == True)
-    ).all()))
+    ).all()), seed=seed)
 
-def choose_wish(db, gender):
+
+def choose_wish(db, gender, seed=""):
     return choose_least_used(list(db.scalars(
         select(WishTemplate).where(
             WishTemplate.active == True,
             WishTemplate.gender.in_([gender, "universal"]),
         )
-    ).all()))
+    ).all()), seed=seed)
+
+
+def choose_card(db, gender, seed=""):
+    items = list(db.scalars(
+        select(Card).where(
+            Card.active == True,
+            Card.gender.in_([gender, "universal"]),
+        )
+    ).all())
+
+    # Не выбираем запись, если физический файл уже отсутствует.
+    items = [x for x in items if card_file_path(x.filename).exists()]
+    return choose_least_used(items, seed=seed)
+
 
 def get_position(db, source_position):
     """
@@ -162,12 +190,15 @@ def compose_birthday_message(db, emp):
     """
     Собирает письмо без отправки и без изменения счетчиков использования.
 
-    Эту же функцию используют предпросмотр и реальная отправка, чтобы
-    оператор видел тот же результат, который формирует почтовая логика.
+    Выбор текста, пожелания и открытки детерминирован для конкретного
+    сотрудника среди наименее использованных вариантов. Поэтому повторный
+    предпросмотр показывает тот же вариант, пока не изменился фотобанк
+    или счетчики реальных отправок.
     """
     cfg = get_all_settings(db)
+    seed = emp.employee_key or str(emp.id)
 
-    intro = choose_intro(db)
+    intro = choose_intro(db, seed=f"{seed}:intro")
     if not intro:
         raise ValueError("Нет активного текста поздравления")
 
@@ -189,9 +220,22 @@ def compose_birthday_message(db, emp):
     wish = None
     wish_text = ""
     if cfg.get("wishes_enabled") == "true":
-        wish = choose_wish(db, emp.gender)
+        wish = choose_wish(db, emp.gender, seed=f"{seed}:wish")
         if wish:
             wish_text = render_text(wish.body, ctx)
+
+    card = None
+    card_path = None
+    card_info = None
+    if cfg.get("cards_enabled") == "true":
+        card = choose_card(db, emp.gender, seed=f"{seed}:card")
+        if card:
+            card_path = card_file_path(card.filename)
+            card_info = card_meta(card.filename)
+            if not card_info.get("exists"):
+                card = None
+                card_path = None
+                card_info = None
 
     recipient = cfg.get("mail_recipient", "").strip()
     subject = cfg.get("mail_subject", "Поздравляем с Днем рождения!").strip()
@@ -200,19 +244,27 @@ def compose_birthday_message(db, emp):
         intro_text
         + ("\n" + position if position else "")
         + ("\n" + wish_text if wish_text else "")
+        + (f"\n[Открытка: {card.name}]" if card else "")
     )
 
+    cid = "birthday-card"
     html_body = email_html(
         intro_text,
         wish_text,
         position,
         emp.gender,
+        card_src=f"cid:{cid}" if card else "",
+        card_width=display_width(card_info or {}),
     )
 
     return {
         "cfg": cfg,
         "intro": intro,
         "wish": wish,
+        "card": card,
+        "card_path": card_path,
+        "card_info": card_info,
+        "card_cid": cid,
         "intro_text": intro_text,
         "wish_text": wish_text,
         "position": position,
@@ -225,6 +277,19 @@ def compose_birthday_message(db, emp):
 
 def build_birthday_preview(db, emp):
     message = compose_birthday_message(db, emp)
+
+    preview_html = message["html"]
+    card = message["card"]
+    if card:
+        preview_html = email_html(
+            message["intro_text"],
+            message["wish_text"],
+            message["position"],
+            emp.gender,
+            card_src=f"/cards/{card.id}/image",
+            card_width=display_width(message["card_info"] or {}),
+        )
+
     return {
         "fio": emp.fio,
         "subject": message["subject"],
@@ -232,7 +297,12 @@ def build_birthday_preview(db, emp):
         "position": message["position"],
         "intro_name": message["intro"].name if message["intro"] else "",
         "wish_name": message["wish"].name if message["wish"] else "",
-        "html": message["html"],
+        "card_name": card.name if card else "",
+        "card_orientation": (
+            (message["card_info"] or {}).get("orientation_label", "")
+            if card else ""
+        ),
+        "html": preview_html,
         "excluded": bool(emp.hide_birthday),
         "warning": (
             "Сотрудник исключен из поздравлений признаком «Скрыть день рождения»."
@@ -284,12 +354,23 @@ def send_birthday(db, emp, actor="scheduler"):
     db.commit()
 
     try:
+        inline_image = None
+        card = message["card"]
+        if card and message["card_path"]:
+            inline_image = {
+                "path": str(message["card_path"]),
+                "mime": (message["card_info"] or {}).get("mime") or "image/jpeg",
+                "cid": message["card_cid"],
+                "filename": card.filename,
+            }
+
         send_html_mail(
             message["cfg"],
             subject,
             recipient,
             message["html"],
             message["rendered"],
+            inline_image=inline_image,
         )
         log.status = "sent"
         log.sent_at = datetime.utcnow()
@@ -302,6 +383,11 @@ def send_birthday(db, emp, actor="scheduler"):
         if wish:
             wish.usage_count += 1
             wish.last_used_at = datetime.utcnow()
+
+        card = message["card"]
+        if card:
+            card.usage_count += 1
+            card.last_used_at = datetime.utcnow()
 
         db.add(AuditLog(
             actor=actor,

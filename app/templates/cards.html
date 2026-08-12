@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Фотобанк</h1>
+
+{% if not cards_enabled %}
+<div class="alert">
+  Фотобанк доступен для настройки, но вставка открыток в письма сейчас отключена в разделе «Настройки».
+</div>
+{% endif %}
+
+{% if message %}<div class="alert success">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<div class="card">
+<h2>Добавить изображение</h2>
+<p class="muted">
+  Поддерживаются PNG и JPEG. Большие изображения автоматически уменьшаются до 1600 px по длинной стороне.
+  Ориентация определяется автоматически: горизонтальная, вертикальная или квадратная.
+</p>
+
+<form method="post" action="/cards/upload" enctype="multipart/form-data">
+<div class="cols">
+  <div>
+    <label>Название</label>
+    <input name="name" placeholder="Например: Синяя открытка 01">
+  </div>
+  <div>
+    <label>Для кого</label>
+    <select name="gender">
+      <option value="universal">Универсальная</option>
+      <option value="male">Мужская</option>
+      <option value="female">Женская</option>
+    </select>
+  </div>
+</div>
+
+<label>Изображение</label>
+<input type="file" name="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" required>
+
+<button type="submit">Добавить в фотобанк</button>
+</form>
+</div>
+
+{% if rows %}
+<div class="photo-grid">
+{% for row in rows %}
+{% set x = row.item %}
+{% set m = row.meta %}
+<div class="photo-card">
+  <div class="photo-preview">
+    {% if m.exists %}
+      <img src="/cards/{{ x.id }}/image" alt="{{ x.name }}">
+    {% else %}
+      <div class="photo-missing">Файл отсутствует</div>
+    {% endif %}
+  </div>
+
+  <form method="post" action="/cards/{{ x.id }}">
+    <label>Название</label>
+    <input name="name" value="{{ x.name }}">
+
+    <label>Для кого</label>
+    <select name="gender">
+      <option value="universal" {% if x.gender == "universal" %}selected{% endif %}>Универсальная</option>
+      <option value="male" {% if x.gender == "male" %}selected{% endif %}>Мужская</option>
+      <option value="female" {% if x.gender == "female" %}selected{% endif %}>Женская</option>
+    </select>
+
+    <div class="photo-meta">
+      <span>{{ m.orientation_label }}</span>
+      {% if m.exists %}
+        <span>{{ m.width }} × {{ m.height }}</span>
+      {% endif %}
+      <span>Использована: {{ x.usage_count }}</span>
+    </div>
+
+    <label class="check">
+      <input type="checkbox" name="active" {% if x.active %}checked{% endif %}>
+      Использовать
+    </label>
+
+    <button type="submit">Сохранить</button>
+  </form>
+
+  <form method="post"
+        action="/cards/{{ x.id }}/delete"
+        class="inline"
+        onsubmit="return confirm('Удалить изображение из фотобанка?')">
+    <button type="submit" class="danger">Удалить</button>
+  </form>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="card muted">Фотобанк пока пуст.</div>
+{% endif %}
+{% endblock %}
