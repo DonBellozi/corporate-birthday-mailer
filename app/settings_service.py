@@ -14,9 +14,22 @@ DEFAULTS = {
     "cards_enabled": "true",
     "positions_enabled": "true",
 
+    # Состояния сотрудников, для которых поздравления запрещены.
+    # Храним JSON-массив строк. Пустой список = разрешены все состояния.
+    "employee_state_blocked": "[]",
+
     "imap_host": "", "imap_port": "993", "imap_ssl": "true",
     "imap_login": "", "imap_password": "", "imap_folder": "INBOX",
     "imap_sender_filter": "", "imap_subject_filter": "", "imap_poll_minutes": "15",
+
+    # Служебное состояние ежедневной кадровой выгрузки.
+    # В интерфейсе настроек эти поля не редактируются.
+    "snapshot_min_ratio": "80",
+    "snapshot_last_success_date": "",
+    "snapshot_last_message_key": "",
+    "snapshot_status": "",
+    "snapshot_status_level": "info",
+    "snapshot_status_date": "",
 
     "smtp_host": "", "smtp_port": "587", "smtp_starttls": "true",
     "smtp_ssl": "false", "smtp_login": "", "smtp_password": "",
@@ -32,6 +45,7 @@ DEFAULTS = {
     "xlsx_hide_column": "Сотрудник.Скрыть день рождения (Сотрудники)",
     "xlsx_id_column": "СНИЛС",
     "xlsx_gender_column": "Физическое лицо.Пол",
+    "xlsx_state_column": "Состояние",
 }
 
 LEGACY_XLSX_DEFAULTS = {

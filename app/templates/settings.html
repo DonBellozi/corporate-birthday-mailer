@@ -16,6 +16,30 @@
 <label class="check"><input type="checkbox" name="cards_enabled" {% if cfg.cards_enabled=="true" %}checked{% endif %}> Использовать открытки</label>
 </div>
 
+<div class="card">
+<h2>Состояния работников</h2>
+<p class="muted">
+  Галочка означает, что сотруднику с таким состоянием можно отправлять поздравление.
+  Список дополняется автоматически из кадровой выгрузки 1С. Новое ранее неизвестное
+  состояние по умолчанию считается разрешенным, пока оператор его не отключит.
+</p>
+
+<div class="state-selector">
+{% for state in employee_states %}
+  <input type="hidden" name="employee_state_known" value="{{ state }}">
+  <label class="check state-check">
+    <input
+      type="checkbox"
+      name="employee_state_allowed"
+      value="{{ state }}"
+      {% if state not in blocked_states %}checked{% endif %}
+    >
+    {{ state }}
+  </label>
+{% endfor %}
+</div>
+</div>
+
 <div class="card"><h2>Входящая почта · IMAP</h2><div class="cols">
 <div><label>Сервер</label><input name="imap_host" value="{{ cfg.imap_host }}"></div>
 <div><label>Порт</label><input name="imap_port" value="{{ cfg.imap_port }}"></div>
@@ -59,6 +83,7 @@
 <div><label>Скрыть день рождения</label><input name="xlsx_hide_column" value="{{ cfg.xlsx_hide_column }}"></div>
 <div><label>Стабильный ID</label><input name="xlsx_id_column" value="{{ cfg.xlsx_id_column }}"></div>
 <div><label>Пол, если есть</label><input name="xlsx_gender_column" value="{{ cfg.xlsx_gender_column }}"></div>
+<div><label>Состояние</label><input name="xlsx_state_column" value="{{ cfg.xlsx_state_column }}"></div>
 </div></div>
 <button class="primary" type="submit">Сохранить</button>
 </form>

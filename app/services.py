@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from pathlib import Path
 import hashlib
+import json
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
@@ -17,10 +18,138 @@ def latest_successful_import(db):
         select(ImportRun).where(ImportRun.success == True).order_by(desc(ImportRun.received_at))
     ).first()
 
-def import_xlsx(db: Session, path: Path, source="manual"):
+
+# Базовый набор известных значений текущего отчета 1С.
+# Фактический селектор дополнительно пополняется значениями из свежего снимка.
+KNOWN_EMPLOYEE_STATES = (
+    "Болезнь",
+    "Дополнительные выходные дни (оплачиваемые)",
+    "Дополнительные выходные дни неоплачиваемые",
+    "Дополнительный отпуск",
+    "Командировка",
+    "Отпуск неоплачиваемый по разрешению работодателя",
+    "Отпуск основной",
+    "Отпуск по беременности и родам",
+    "Отпуск по уходу за ребенком",
+    "Отсутствие по невыясненным причинам",
+    "Работа",
+)
+
+
+def _state_key(value: str) -> str:
+    return " ".join((value or "").replace("\xa0", " ").split()).strip().lower().replace("ё", "е")
+
+
+def blocked_employee_states(cfg: dict[str, str]) -> list[str]:
+    raw = cfg.get("employee_state_blocked", "[]") or "[]"
+    try:
+        values = json.loads(raw)
+    except Exception:
+        return []
+
+    if not isinstance(values, list):
+        return []
+
+    result = []
+    seen = set()
+    for value in values:
+        value = " ".join(str(value or "").replace("\xa0", " ").split()).strip()
+        key = _state_key(value)
+        if value and key not in seen:
+            result.append(value)
+            seen.add(key)
+    return result
+
+
+def current_employee_states(db) -> list[str]:
+    """
+    Список для селектора:
+      - известные состояния текущего отчета;
+      - состояния из последнего успешного снимка;
+      - ранее запрещенные состояния, даже если временно исчезли из выгрузки.
+    """
     cfg = get_all_settings(db)
+    values = list(KNOWN_EMPLOYEE_STATES)
+    values.extend(blocked_employee_states(cfg))
+
+    latest = latest_successful_import(db)
+    if latest:
+        values.extend(
+            x for x in db.scalars(
+                select(EmployeeSnapshot.employee_state)
+                .where(EmployeeSnapshot.import_id == latest.id)
+                .distinct()
+            ).all()
+            if x
+        )
+
+    # Дедупликация без потери нормального написания.
+    by_key = {}
+    for value in values:
+        value = " ".join(str(value or "").replace("\xa0", " ").split()).strip()
+        if value:
+            by_key.setdefault(_state_key(value), value)
+
+    # "Работа" первой, остальные по алфавиту.
+    return sorted(
+        by_key.values(),
+        key=lambda x: (0 if _state_key(x) == "работа" else 1, _state_key(x)),
+    )
+
+
+def employee_state_is_allowed(emp, cfg: dict[str, str]) -> bool:
+    state = " ".join(str(getattr(emp, "employee_state", "") or "").replace("\xa0", " ").split()).strip()
+
+    # Старые снимки, импортированные до появления колонки "Состояние",
+    # не блокируем. После следующего импорта значение станет доступно.
+    if not state:
+        return True
+
+    blocked = {_state_key(x) for x in blocked_employee_states(cfg)}
+    return _state_key(state) not in blocked
+
+
+def birthday_send_eligibility(db, emp) -> tuple[bool, str]:
+    if emp.hide_birthday:
+        return False, "В 1С установлен запрет «Скрыть день рождения»"
+
+    cfg = get_all_settings(db)
+    if not employee_state_is_allowed(emp, cfg):
+        state = getattr(emp, "employee_state", "") or "Не указано"
+        return False, f"Состояние «{state}» исключено из поздравлений"
+
+    return True, ""
+
+
+def snapshot_size_is_suspicious(current_count: int, previous_count: int, min_ratio: int = 80):
+    """
+    Возвращает (is_suspicious, percentage).
+
+    Резкое уменьшение кадровой выгрузки почти всегда означает неполный
+    отчет/сбой 1С, а не массовое увольнение. Проверка применяется только
+    к автоматической ночной выгрузке.
+    """
+    if previous_count <= 0:
+        return False, 100.0
+
+    percentage = current_count * 100.0 / previous_count
+    return percentage < min_ratio, percentage
+
+
+def import_xlsx(
+    db: Session,
+    path: Path,
+    source="manual",
+    enforce_snapshot_sanity: bool = False,
+):
+    cfg = get_all_settings(db)
+    previous = latest_successful_import(db)
+
     run = ImportRun(filename=path.name, source=source, success=False)
-    db.add(run); db.commit(); db.refresh(run)
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
     try:
         rows = parse_workbook(path, cfg)
         run.rows_total = len(rows)
@@ -32,11 +161,38 @@ def import_xlsx(db: Session, path: Path, source="manual"):
                 "а не только структура подразделений."
             )
 
-        valid = 0
-        known_positions = {x for x in db.scalars(select(PositionMapping.source_position)).all()}
-        for item in rows:
-            if item.get("error"):
-                continue
+        valid_rows = [item for item in rows if not item.get("error")]
+        run.rows_valid = len(valid_rows)
+
+        if not valid_rows:
+            raise ValueError("В XLSX не найдено ни одной корректной строки сотрудника.")
+
+        if enforce_snapshot_sanity and previous and previous.rows_valid:
+            try:
+                min_ratio = int(cfg.get("snapshot_min_ratio", "80") or "80")
+            except Exception:
+                min_ratio = 80
+            min_ratio = max(1, min(100, min_ratio))
+
+            suspicious, percentage = snapshot_size_is_suspicious(
+                len(valid_rows),
+                previous.rows_valid,
+                min_ratio,
+            )
+            if suspicious:
+                raise ValueError(
+                    "Новая выгрузка выглядит неполной: "
+                    f"{len(valid_rows)} работников вместо {previous.rows_valid} "
+                    f"({percentage:.1f}% от предыдущего снимка; "
+                    f"допустимый минимум {min_ratio}%). "
+                    "Рабочим остается предыдущий успешный снимок."
+                )
+
+        known_positions = {
+            x for x in db.scalars(select(PositionMapping.source_position)).all()
+        }
+
+        for item in valid_rows:
             db.add(EmployeeSnapshot(
                 import_id=run.id,
                 employee_key=item["employee_key"],
@@ -44,23 +200,33 @@ def import_xlsx(db: Session, path: Path, source="manual"):
                 birthday_day=item["birthday_day"],
                 birthday_month=item["birthday_month"],
                 gender=item["gender"],
+                employee_state=item.get("employee_state", ""),
                 hide_birthday=item["hide_birthday"],
                 source_position=item["source_position"],
             ))
-            valid += 1
+
             source_position = item.get("source_position") or ""
             if source_position and source_position not in known_positions:
-                db.add(PositionMapping(source_position=source_position, display_position="", active=True, confirmed=False))
+                db.add(PositionMapping(
+                    source_position=source_position,
+                    display_position="",
+                    active=True,
+                    confirmed=False,
+                ))
                 known_positions.add(source_position)
-        run.rows_valid = valid
+
         run.success = True
         db.commit()
         return run
+
     except Exception as exc:
+        # На этапе sanity-check снимки еще не созданы, поэтому неудачная
+        # выгрузка не может случайно стать рабочей.
         run.error_text = str(exc)
         run.success = False
         db.commit()
         raise
+
 
 def todays_employees(db):
     latest = latest_successful_import(db)
@@ -108,10 +274,13 @@ def upcoming_birthdays(db, days=30):
             continue
 
         next_date, days_left = match
+        can_send, send_reason = birthday_send_eligibility(db, emp)
         result.append({
             "employee": emp,
             "next_date": next_date,
             "days_left": days_left,
+            "can_send": can_send,
+            "send_reason": send_reason,
         })
 
     result.sort(key=lambda item: (item["next_date"], item["employee"].fio))
@@ -302,18 +471,15 @@ def build_birthday_preview(db, emp):
             if card else ""
         ),
         "html": preview_html,
-        "excluded": bool(emp.hide_birthday),
-        "warning": (
-            "Сотрудник исключен из поздравлений признаком «Скрыть день рождения»."
-            if emp.hide_birthday
-            else ""
-        ),
+        "excluded": not birthday_send_eligibility(db, emp)[0],
+        "warning": birthday_send_eligibility(db, emp)[1],
     }
 
 
 def send_birthday(db, emp, actor="scheduler"):
-    if emp.hide_birthday:
-        return False, "Работник исключен из поздравлений"
+    can_send, reason = birthday_send_eligibility(db, emp)
+    if not can_send:
+        return False, reason
 
     year = date.today().year
     old = db.scalar(select(MailLog).where(

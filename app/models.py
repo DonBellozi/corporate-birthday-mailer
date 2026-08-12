@@ -38,6 +38,7 @@ class EmployeeSnapshot(Base):
     birthday_day: Mapped[int] = mapped_column(Integer)
     birthday_month: Mapped[int] = mapped_column(Integer)
     gender: Mapped[str] = mapped_column(String(20), default="unknown")
+    employee_state: Mapped[str] = mapped_column(String(200), default="")
     hide_birthday: Mapped[bool] = mapped_column(Boolean, default=False)
     source_position: Mapped[str | None] = mapped_column(Text, nullable=True)
 

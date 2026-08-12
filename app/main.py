@@ -1,13 +1,13 @@
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
-import os, shutil, uuid
+import os, shutil, uuid, json
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, inspect, text as sql_text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -16,7 +16,7 @@ from .models import LocalUser, ImportRun, PositionMapping, IntroTemplate, Card, 
 from .security import hash_password, verify_password
 from .settings_service import ensure_defaults, get_all_settings, set_settings
 from .ad_auth import authenticate_ad
-from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview
+from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview, latest_successful_import, current_employee_states, blocked_employee_states, birthday_send_eligibility
 from .mail_service import fetch_latest_xlsx
 from .rendering import validate_template
 from .scheduler import start_scheduler
@@ -28,6 +28,17 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 def bootstrap():
     Base.metadata.create_all(bind=engine)
+
+    # create_all() не добавляет новые колонки в уже существующие таблицы.
+    # Делаем маленькую безопасную миграцию для поля "Состояние".
+    columns = {col["name"] for col in inspect(engine).get_columns("employee_snapshots")}
+    if "employee_state" not in columns:
+        with engine.begin() as conn:
+            conn.execute(sql_text(
+                "ALTER TABLE employee_snapshots "
+                "ADD COLUMN employee_state VARCHAR(200) NOT NULL DEFAULT ''"
+            ))
+
     with SessionLocal() as db:
         ensure_defaults(db)
         login = os.getenv("BOOTSTRAP_ADMIN_LOGIN", "admin")
@@ -85,7 +96,21 @@ def home(request: Request, db: Session = Depends(get_db)):
     if not user_name(request):
         return RedirectResponse("/login", 303)
     latest = db.scalars(select(ImportRun).order_by(desc(ImportRun.received_at))).first()
+    active_snapshot = latest_successful_import(db)
+    cfg = get_all_settings(db)
+    snapshot_status = cfg.get("snapshot_status", "")
+    snapshot_status_level = cfg.get("snapshot_status_level", "info")
+
     today_birthdays = todays_employees(db)
+    today_rows = []
+    for emp in today_birthdays:
+        can_send, send_reason = birthday_send_eligibility(db, emp)
+        today_rows.append({
+            "employee": emp,
+            "can_send": can_send,
+            "send_reason": send_reason,
+        })
+
     next_birthdays = upcoming_birthdays(db, days=30)
     unconfirmed_items = list(db.scalars(
         select(PositionMapping).where(PositionMapping.confirmed == False)
@@ -98,9 +123,12 @@ def home(request: Request, db: Session = Depends(get_db)):
         request,
         "index.html",
         latest=latest,
-        upcoming=today_birthdays,
+        upcoming=today_rows,
         next_birthdays=next_birthdays,
         unconfirmed_count=unconfirmed_count,
+        active_snapshot=active_snapshot,
+        snapshot_status=snapshot_status,
+        snapshot_status_level=snapshot_status_level,
     )
 
 @app.get("/login", response_class=HTMLResponse)
@@ -131,13 +159,42 @@ def logout(request: Request):
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, db: Session = Depends(get_db)):
     require_user(request)
-    return page(request, "settings.html", cfg=get_all_settings(db), saved=False)
+    cfg = get_all_settings(db)
+    return page(
+        request,
+        "settings.html",
+        cfg=cfg,
+        saved=False,
+        employee_states=current_employee_states(db),
+        blocked_states=blocked_employee_states(cfg),
+    )
 
 @app.post("/settings", response_class=HTMLResponse)
 async def settings_post(request: Request, db: Session = Depends(get_db)):
     actor = require_user(request)
     form = await request.form()
     data = {k: str(v) for k, v in form.items()}
+
+    # Селектор состояний: в форме передаем полный набор показанных
+    # состояний и отдельно те, которым разрешена отправка.
+    known_states = [
+        str(x).strip() for x in form.getlist("employee_state_known")
+        if str(x).strip()
+    ]
+    allowed_state_keys = {
+        " ".join(str(x).replace("\xa0", " ").split()).strip().lower().replace("ё", "е")
+        for x in form.getlist("employee_state_allowed")
+    }
+    blocked_states = [
+        state for state in known_states
+        if " ".join(state.replace("\xa0", " ").split()).strip().lower().replace("ё", "е")
+        not in allowed_state_keys
+    ]
+    data["employee_state_blocked"] = json.dumps(
+        blocked_states,
+        ensure_ascii=False,
+    )
+
     for checkbox in [
         "auto_send_enabled","wishes_enabled","cards_enabled","positions_enabled",
         "imap_ssl","smtp_starttls","smtp_ssl","ad_enabled","ad_ssl"
@@ -152,7 +209,15 @@ async def settings_post(request: Request, db: Session = Depends(get_db)):
     set_settings(db, data)
     db.add(AuditLog(actor=actor, action="settings_changed", details="Изменены настройки"))
     db.commit()
-    return page(request, "settings.html", cfg=get_all_settings(db), saved=True)
+    cfg = get_all_settings(db)
+    return page(
+        request,
+        "settings.html",
+        cfg=cfg,
+        saved=True,
+        employee_states=current_employee_states(db),
+        blocked_states=blocked_employee_states(cfg),
+    )
 
 @app.get("/imports", response_class=HTMLResponse)
 def imports_page(request: Request, db: Session = Depends(get_db)):
@@ -424,7 +489,15 @@ def template_delete(item_id: int, request: Request, db: Session = Depends(get_db
 @app.get("/today", response_class=HTMLResponse)
 def today_page(request: Request, db: Session = Depends(get_db)):
     require_user(request)
-    return page(request, "today.html", items=todays_employees(db), date=date.today())
+    rows = []
+    for emp in todays_employees(db):
+        can_send, send_reason = birthday_send_eligibility(db, emp)
+        rows.append({
+            "employee": emp,
+            "can_send": can_send,
+            "send_reason": send_reason,
+        })
+    return page(request, "today.html", rows=rows, date=date.today())
 
 @app.post("/today/{employee_id}/send")
 def today_send(employee_id: int, request: Request, db: Session = Depends(get_db)):

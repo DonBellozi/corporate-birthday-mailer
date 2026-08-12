@@ -1,6 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Обзор</h1>
+
+{% if snapshot_status %}
+<div class="alert {% if snapshot_status_level == 'success' %}success{% elif snapshot_status_level == 'warning' %}warning{% endif %}">
+  <strong>Кадровая выгрузка:</strong> {{ snapshot_status }}
+</div>
+{% endif %}
+
+{% if active_snapshot %}
+<div class="snapshot-line muted">
+  Рабочий снимок: {{ active_snapshot.received_at.strftime("%d.%m.%Y %H:%M") }} ·
+  {{ active_snapshot.rows_valid }} работников · источник: {{ active_snapshot.source }}
+</div>
+{% endif %}
+
 <div class="grid">
 <div class="card"><h3>Последний XLSX</h3>
 {% if latest %}<div class="big">{{ "Успешно" if latest.success else "Ошибка" }}</div>
@@ -11,8 +25,23 @@
 </div>
 <div class="card"><h2>Сегодняшние именинники</h2>
 {% if upcoming %}
-<table><tr><th>ФИО</th><th>Пол</th><th>Запрет</th></tr>
-{% for x in upcoming %}<tr><td>{{ x.fio }}</td><td>{{ "Мужской" if x.gender == "male" else "Женский" if x.gender == "female" else "Не определен" }}</td><td>{{ "Да" if x.hide_birthday else "Нет" }}</td></tr>{% endfor %}
+<table>
+<tr><th>ФИО</th><th>Пол</th><th>Состояние</th><th>Отправка</th></tr>
+{% for row in upcoming %}
+{% set x = row.employee %}
+<tr>
+  <td>{{ x.fio }}</td>
+  <td>{{ "Мужской" if x.gender == "male" else "Женский" if x.gender == "female" else "Не определен" }}</td>
+  <td>{{ x.employee_state or "Не указано" }}</td>
+  <td>
+    {% if row.can_send %}
+      <span class="ok">Можно</span>
+    {% else %}
+      <span class="bad" title="{{ row.send_reason }}">Не поздравлять</span>
+    {% endif %}
+  </td>
+</tr>
+{% endfor %}
 </table>
 {% else %}<p class="muted">Сегодня именинников нет.</p>{% endif %}
 </div>
@@ -26,7 +55,8 @@
   <th>Через</th>
   <th>ФИО</th>
   <th>Пол</th>
-  <th>Запрет</th>
+  <th>Состояние</th>
+  <th>Отправка</th>
   <th>Просмотр</th>
 </tr>
 {% for item in next_birthdays %}
@@ -41,11 +71,12 @@
   </td>
   <td>{{ item.employee.fio }}</td>
   <td>{{ "Мужской" if item.employee.gender == "male" else "Женский" if item.employee.gender == "female" else "Не определен" }}</td>
+  <td>{{ item.employee.employee_state or "Не указано" }}</td>
   <td>
-    {% if item.employee.hide_birthday %}
-      <span class="bad">Не поздравлять</span>
-    {% else %}
+    {% if item.can_send %}
       <span class="ok">Можно</span>
+    {% else %}
+      <span class="bad" title="{{ item.send_reason }}">Не поздравлять</span>
     {% endif %}
   </td>
   <td>
