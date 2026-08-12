@@ -7,6 +7,7 @@
 <tr>
   <th>ФИО</th>
   <th>Пол</th>
+  <th>Рабочий email</th>
   <th>Состояние</th>
   <th>Подразделение / должность 1С</th>
   <th>Отправка</th>
@@ -17,6 +18,7 @@
 <tr>
   <td>{{ x.fio }}</td>
   <td>{{ "Мужской" if x.gender == "male" else "Женский" if x.gender == "female" else "Не определен" }}</td>
+  <td>{{ x.work_email or "Не указан" }}</td>
   <td>{{ x.employee_state or "Не указано" }}</td>
   <td class="small">{{ x.source_position }}</td>
   <td>

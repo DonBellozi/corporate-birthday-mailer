@@ -42,6 +42,24 @@
 </div>
 </div>
 
+<div class="card">
+<h2>Рабочая почта</h2>
+<p class="muted">
+  Для поздравления у сотрудника должен быть заполнен корпоративный email из 1С.
+  Если список доменов заполнен, адрес также должен принадлежать одному из них.
+  Указывайте домены по одному на строку, без символа @.
+</p>
+<label>Разрешенные почтовые домены</label>
+<textarea
+  name="allowed_email_domains"
+  rows="4"
+  placeholder="company.ru&#10;company.com"
+>{{ cfg.allowed_email_domains }}</textarea>
+<p class="muted small">
+  Пустой список не проверяет домен, но отсутствие рабочего email все равно запрещает поздравление.
+</p>
+</div>
+
 <div class="card"><h2>Входящая почта · IMAP</h2><div class="cols">
 <div><label>Сервер</label><input name="imap_host" value="{{ cfg.imap_host }}"></div>
 <div><label>Порт</label><input name="imap_port" value="{{ cfg.imap_port }}"></div>
@@ -86,6 +104,7 @@
 <div><label>Стабильный ID</label><input name="xlsx_id_column" value="{{ cfg.xlsx_id_column }}"></div>
 <div><label>Пол, если есть</label><input name="xlsx_gender_column" value="{{ cfg.xlsx_gender_column }}"></div>
 <div><label>Состояние</label><input name="xlsx_state_column" value="{{ cfg.xlsx_state_column }}"></div>
+<div><label>Рабочий email</label><input name="xlsx_work_email_column" value="{{ cfg.xlsx_work_email_column }}"></div>
 </div></div>
 <button class="primary" type="submit">Сохранить</button>
 </form>

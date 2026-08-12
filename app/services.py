@@ -2,6 +2,7 @@ from datetime import date, datetime
 from pathlib import Path
 import hashlib
 import json
+import re
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
@@ -109,6 +110,46 @@ def employee_state_is_allowed(emp, cfg: dict[str, str]) -> bool:
     return _state_key(state) not in blocked
 
 
+def allowed_email_domains(cfg: dict[str, str]) -> list[str]:
+    raw = cfg.get("allowed_email_domains", "") or ""
+    values = re.split(r"[\r\n,;]+", raw)
+
+    result = []
+    seen = set()
+    for value in values:
+        domain = str(value or "").strip().lower()
+        if domain.startswith("@"):
+            domain = domain[1:]
+        domain = domain.rstrip(".")
+        if domain and domain not in seen:
+            result.append(domain)
+            seen.add(domain)
+    return result
+
+
+def work_email_status(emp, cfg: dict[str, str]) -> tuple[bool, str]:
+    email = str(getattr(emp, "work_email", "") or "").strip().lower()
+
+    if not email:
+        return False, "Рабочий email не указан"
+
+    if email.count("@") != 1:
+        return False, "Рабочий email имеет некорректный формат"
+
+    local, domain = email.rsplit("@", 1)
+    local = local.strip()
+    domain = domain.strip().rstrip(".")
+
+    if not local or not domain or "." not in domain:
+        return False, "Рабочий email имеет некорректный формат"
+
+    allowed = set(allowed_email_domains(cfg))
+    if allowed and domain not in allowed:
+        return False, f"Домен рабочего email «{domain}» не разрешен"
+
+    return True, ""
+
+
 def birthday_send_eligibility(db, emp) -> tuple[bool, str]:
     if emp.hide_birthday:
         return False, "В 1С установлен запрет «Скрыть день рождения»"
@@ -117,6 +158,10 @@ def birthday_send_eligibility(db, emp) -> tuple[bool, str]:
     if not employee_state_is_allowed(emp, cfg):
         state = getattr(emp, "employee_state", "") or "Не указано"
         return False, f"Состояние «{state}» исключено из поздравлений"
+
+    email_ok, email_reason = work_email_status(emp, cfg)
+    if not email_ok:
+        return False, email_reason
 
     # Запрет по должности привязан к полному source_position:
     # вся иерархия подразделений + должность 1С.
@@ -211,6 +256,7 @@ def import_xlsx(
                 birthday_month=item["birthday_month"],
                 gender=item["gender"],
                 employee_state=item.get("employee_state", ""),
+                work_email=item.get("work_email", ""),
                 hide_birthday=item["hide_birthday"],
                 source_position=item["source_position"],
             ))

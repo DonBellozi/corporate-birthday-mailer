@@ -26,12 +26,13 @@
 <div class="card"><h2>Сегодняшние именинники</h2>
 {% if upcoming %}
 <table>
-<tr><th>ФИО</th><th>Пол</th><th>Состояние</th><th>Отправка</th></tr>
+<tr><th>ФИО</th><th>Пол</th><th>Рабочий email</th><th>Состояние</th><th>Отправка</th></tr>
 {% for row in upcoming %}
 {% set x = row.employee %}
 <tr>
   <td>{{ x.fio }}</td>
   <td>{{ "Мужской" if x.gender == "male" else "Женский" if x.gender == "female" else "Не определен" }}</td>
+  <td>{{ x.work_email or "Не указан" }}</td>
   <td>{{ x.employee_state or "Не указано" }}</td>
   <td>
     {% if row.can_send %}
@@ -55,6 +56,7 @@
   <th>Через</th>
   <th>ФИО</th>
   <th>Пол</th>
+  <th>Рабочий email</th>
   <th>Состояние</th>
   <th>Отправка</th>
   <th>Просмотр</th>
@@ -71,6 +73,7 @@
   </td>
   <td>{{ item.employee.fio }}</td>
   <td>{{ "Мужской" if item.employee.gender == "male" else "Женский" if item.employee.gender == "female" else "Не определен" }}</td>
+  <td>{{ item.employee.work_email or "Не указан" }}</td>
   <td>{{ item.employee.employee_state or "Не указано" }}</td>
   <td>
     {% if item.can_send %}

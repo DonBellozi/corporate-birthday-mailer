@@ -18,6 +18,11 @@ DEFAULTS = {
     # Храним JSON-массив строк. Пустой список = разрешены все состояния.
     "employee_state_blocked": "[]",
 
+    # Разрешенные домены корпоративной почты, по одному на строку.
+    # Пустой список отключает проверку домена, но наличие рабочего email
+    # остается обязательным.
+    "allowed_email_domains": "",
+
     "imap_host": "", "imap_port": "993", "imap_ssl": "true",
     "imap_login": "", "imap_password": "", "imap_folder": "INBOX",
     "imap_sender_filter": "", "imap_subject_filter": "", "imap_poll_minutes": "15",
@@ -46,6 +51,7 @@ DEFAULTS = {
     "xlsx_id_column": "СНИЛС",
     "xlsx_gender_column": "Физическое лицо.Пол",
     "xlsx_state_column": "Состояние",
+    "xlsx_work_email_column": "Физическое лицо.Адрес электронной почты",
 }
 
 LEGACY_XLSX_DEFAULTS = {

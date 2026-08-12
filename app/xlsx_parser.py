@@ -281,6 +281,15 @@ def parse_workbook(path: str | Path, cfg: dict[str, str]):
         False,
         aliases=["Состояние"],
     )
+    work_email_col = find_col(
+        headers,
+        cfg.get("xlsx_work_email_column", ""),
+        False,
+        aliases=[
+            "Физическое лицо.Адрес электронной почты",
+            "Адрес электронной почты",
+        ],
+    )
 
     result = []
     department_stack: list[str] = []
@@ -317,6 +326,7 @@ def parse_workbook(path: str | Path, cfg: dict[str, str]):
         explicit_gender = normalize_text(ws.cell(row, gender_col).value) if gender_col else ""
         gender = detect_gender(fio, explicit_gender)
         employee_state = normalize_text(ws.cell(row, state_col).value) if state_col else ""
+        work_email = normalize_text(ws.cell(row, work_email_col).value) if work_email_col else ""
         employee_key = normalize_text(ws.cell(row, id_col).value) if id_col else ""
         if not employee_key:
             employee_key = normalize_key(f"{fio}|{birthday[0]:02d}.{birthday[1]:02d}")
@@ -328,6 +338,7 @@ def parse_workbook(path: str | Path, cfg: dict[str, str]):
             "birthday_month": birthday[1],
             "gender": gender,
             "employee_state": employee_state,
+            "work_email": work_email,
             "hide_birthday": hidden,
             "source_position": source_position,
             "error": None,

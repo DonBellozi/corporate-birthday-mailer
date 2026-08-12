@@ -39,6 +39,13 @@ def bootstrap():
                 "ADD COLUMN employee_state VARCHAR(200) NOT NULL DEFAULT ''"
             ))
 
+    if "work_email" not in columns:
+        with engine.begin() as conn:
+            conn.execute(sql_text(
+                "ALTER TABLE employee_snapshots "
+                "ADD COLUMN work_email VARCHAR(500) NOT NULL DEFAULT ''"
+            ))
+
     position_columns = {
         col["name"] for col in inspect(engine).get_columns("position_mappings")
     }
