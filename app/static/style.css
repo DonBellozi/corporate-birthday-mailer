@@ -51,7 +51,20 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
 .state-check:hover{background:#f6f7f9}
 @media(max-width:700px){.state-selector{grid-template-columns:1fr}}
 
-.position-tree{line-height:1.45}
-.position-tree-level{padding:2px 0}
-.position-tree-level + .position-tree-level{border-top:1px dotted #e2e6ea}
-.position-tree-title{margin-top:7px;padding-top:7px;border-top:1px solid #dfe3e8}
+.position-tree{
+  white-space:normal;
+  line-height:1.3;
+  padding:7px 10px;
+}
+.position-tree-level{
+  padding:1px 0;
+  margin:0;
+}
+.position-tree-level + .position-tree-level{
+  border-top:1px dotted #e2e6ea;
+}
+.position-tree-title{
+  margin-top:4px;
+  padding-top:4px;
+  border-top:1px solid #dfe3e8;
+}
