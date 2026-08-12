@@ -12,11 +12,11 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from .db import Base, engine, get_db, SessionLocal
-from .models import LocalUser, ImportRun, PositionMapping, IntroTemplate, Card, MailLog, AuditLog, EmployeeSnapshot
+from .models import LocalUser, ImportRun, PositionMapping, EmployeePositionChoice, IntroTemplate, Card, MailLog, AuditLog, EmployeeSnapshot
 from .security import hash_password, verify_password
 from .settings_service import ensure_defaults, get_all_settings, set_settings
 from .ad_auth import authenticate_ad
-from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview, latest_successful_import, current_employee_states, blocked_employee_states, birthday_send_eligibility, compose_birthday_message
+from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview, latest_successful_import, current_employee_states, blocked_employee_states, birthday_send_eligibility, compose_birthday_message, employee_position_conflicts
 from .mail_service import fetch_latest_xlsx, send_html_mail
 from .rendering import validate_template
 from .scheduler import start_scheduler
@@ -135,6 +135,10 @@ def home(request: Request, db: Session = Depends(get_db)):
     unconfirmed_count = sum(
         1 for item in unconfirmed_items
         if not suggest_position(item.source_position).auto_use
+    )
+    unconfirmed_count += sum(
+        1 for item in employee_position_conflicts(db)
+        if not item["resolved"]
     )
     return page(
         request,
@@ -426,6 +430,8 @@ def positions_page(request: Request, db: Session = Depends(get_db)):
     ).all())
 
     rows = []
+    mapping_by_source = {item.source_position: item for item in items}
+
     for item in items:
         suggestion = suggest_position(item.source_position)
         source_units, source_title = split_source_position(item.source_position)
@@ -437,7 +443,84 @@ def positions_page(request: Request, db: Session = Depends(get_db)):
             "source_title": source_title,
         })
 
-    return page(request, "positions.html", rows=rows)
+    multi_position_rows = []
+    for conflict in employee_position_conflicts(db):
+        options = []
+        for source_position in conflict["positions"]:
+            mapping = mapping_by_source.get(source_position)
+            suggestion = suggest_position(source_position)
+            source_units, source_title = split_source_position(source_position)
+
+            display_position = ""
+            if mapping and mapping.confirmed and mapping.display_position.strip():
+                display_position = mapping.display_position.strip()
+            elif suggestion.text:
+                display_position = suggestion.text
+            else:
+                display_position = source_title
+
+            options.append({
+                "source_position": source_position,
+                "source_units": source_units,
+                "source_title": source_title,
+                "display_position": display_position,
+                "congratulate": mapping.congratulate if mapping else True,
+            })
+
+        multi_position_rows.append({
+            **conflict,
+            "options": options,
+        })
+
+    return page(
+        request,
+        "positions.html",
+        rows=rows,
+        multi_position_rows=multi_position_rows,
+    )
+
+@app.post("/employee-position-choice")
+async def employee_position_choice_save(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    actor = require_user(request)
+    form = await request.form()
+    employee_key = str(form.get("employee_key", "")).strip()
+    source_position = str(form.get("source_position", "")).strip()
+
+    latest = latest_successful_import(db)
+    if not latest or not employee_key or not source_position:
+        raise HTTPException(400, "Не выбран работник или должность")
+
+    valid = db.scalar(select(EmployeeSnapshot).where(
+        EmployeeSnapshot.import_id == latest.id,
+        EmployeeSnapshot.employee_key == employee_key,
+        EmployeeSnapshot.source_position == source_position,
+    ))
+    if not valid:
+        raise HTTPException(400, "Выбранная должность отсутствует в текущей выгрузке")
+
+    item = db.scalar(select(EmployeePositionChoice).where(
+        EmployeePositionChoice.employee_key == employee_key,
+    ))
+    if item:
+        item.source_position = source_position
+    else:
+        item = EmployeePositionChoice(
+            employee_key=employee_key,
+            source_position=source_position,
+        )
+        db.add(item)
+
+    db.add(AuditLog(
+        actor=actor,
+        action="employee_position_selected",
+        details=f"{valid.fio}: {source_position}",
+    ))
+    db.commit()
+    return RedirectResponse("/positions", 303)
+
 
 @app.post("/positions/{item_id}")
 async def positions_save(item_id: int, request: Request, db: Session = Depends(get_db)):

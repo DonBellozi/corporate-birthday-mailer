@@ -7,6 +7,65 @@
   Ручное подтверждение всегда имеет приоритет.
 </p>
 
+{% if multi_position_rows %}
+<div class="card multi-position-summary">
+  <h2>Работники с несколькими должностями</h2>
+  <p class="muted">
+    Один и тот же работник найден в текущей выгрузке по нескольким должностям.
+    Выберите, какую из них использовать для поздравления. До выбора автоматическая
+    отправка этому работнику не выполняется.
+  </p>
+
+  {% for person in multi_position_rows %}
+  <form method="post"
+        action="/employee-position-choice"
+        class="employee-position-choice-form">
+    <input type="hidden" name="employee_key" value="{{ person.employee_key }}">
+
+    <div class="multi-position-person">
+      <div class="multi-position-person-head">
+        <strong>{{ person.fio }}</strong>
+        <span class="employee-position-choice-status">
+          {% if person.resolved %}
+            <span class="ok">✓ Должность выбрана</span>
+          {% else %}
+            <span class="bad">○ Требуется выбрать</span>
+          {% endif %}
+        </span>
+      </div>
+
+      <div class="multi-position-options">
+        {% for option in person.options %}
+        <label class="multi-position-option">
+          <input type="radio"
+                 name="source_position"
+                 value="{{ option.source_position }}"
+                 {% if option.source_position == person.selected_source_position %}checked{% endif %}
+                 required>
+          <span>
+            <strong>{{ option.display_position or option.source_title }}</strong>
+            {% if not option.congratulate %}
+              <span class="bad"> · эта должность исключена из поздравлений</span>
+            {% endif %}
+            {% if option.source_units %}
+            <span class="muted small multi-position-path">
+              {{ option.source_units|join(" / ") }}
+            </span>
+            {% endif %}
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+
+      <button type="submit" class="employee-position-choice-save">
+        {{ "Изменить выбор" if person.resolved else "Сохранить выбор" }}
+      </button>
+    </div>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% for row in rows %}
 {% set x = row.item %}
 {% set s = row.suggestion %}
@@ -136,6 +195,45 @@
       }
     });
   });
+
+  document.querySelectorAll(".employee-position-choice-form").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const button = form.querySelector(".employee-position-choice-save");
+      const status = form.querySelector(".employee-position-choice-status");
+      const oldText = button.textContent;
+
+      button.disabled = true;
+      button.textContent = "Сохраняем...";
+
+      try {
+        const response = await fetch(form.action, {
+          method: "POST",
+          body: new FormData(form),
+          credentials: "same-origin",
+          redirect: "follow"
+        });
+
+        if (!response.ok) {
+          throw new Error(`Ошибка HTTP ${response.status}`);
+        }
+
+        status.innerHTML = '<span class="ok">✓ Должность выбрана</span>';
+        button.textContent = "Сохранено";
+
+        setTimeout(() => {
+          button.textContent = "Изменить выбор";
+        }, 1200);
+      } catch (error) {
+        button.textContent = oldText;
+        status.innerHTML = '<span class="bad">Не удалось сохранить</span>';
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+
 })();
 </script>
 

@@ -6,7 +6,7 @@ import re
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from .models import EmployeeSnapshot, ImportRun, IntroTemplate, PositionMapping, WishTemplate, Card, MailLog, AuditLog
+from .models import EmployeeSnapshot, ImportRun, IntroTemplate, PositionMapping, EmployeePositionChoice, WishTemplate, Card, MailLog, AuditLog
 from .settings_service import get_all_settings
 from .xlsx_parser import parse_workbook
 from .rendering import variable_context, render_text, email_html
@@ -150,9 +150,156 @@ def work_email_status(emp, cfg: dict[str, str]) -> tuple[bool, str]:
     return True, ""
 
 
+def _distinct_positions(items) -> list[str]:
+    result = []
+    seen = set()
+    for emp in items:
+        value = (getattr(emp, "source_position", "") or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def employee_position_conflicts(db) -> list[dict]:
+    """
+    Работники, которые в последнем успешном снимке встречаются с двумя
+    и более разными должностями. Идентификатор работника – employee_key
+    (в нормальной выгрузке это СНИЛС).
+    """
+    latest = latest_successful_import(db)
+    if not latest:
+        return []
+
+    employees = list(db.scalars(
+        select(EmployeeSnapshot)
+        .where(EmployeeSnapshot.import_id == latest.id)
+        .order_by(EmployeeSnapshot.fio, EmployeeSnapshot.id)
+    ).all())
+
+    groups = {}
+    for emp in employees:
+        groups.setdefault(emp.employee_key, []).append(emp)
+
+    choices = {
+        x.employee_key: x
+        for x in db.scalars(select(EmployeePositionChoice)).all()
+    }
+
+    result = []
+    for employee_key, items in groups.items():
+        positions = _distinct_positions(items)
+        if len(positions) < 2:
+            continue
+
+        choice = choices.get(employee_key)
+        selected = (
+            choice.source_position
+            if choice and choice.source_position in positions
+            else ""
+        )
+
+        result.append({
+            "employee_key": employee_key,
+            "fio": items[0].fio,
+            "positions": positions,
+            "selected_source_position": selected,
+            "resolved": bool(selected),
+        })
+
+    result.sort(key=lambda x: x["fio"])
+    return result
+
+
+def employee_position_conflict_status(db, emp) -> tuple[bool, str]:
+    """
+    Проверяет, требуется ли для конкретного работника ручной выбор должности.
+    """
+    latest = latest_successful_import(db)
+    if not latest:
+        return True, ""
+
+    rows = list(db.scalars(
+        select(EmployeeSnapshot).where(
+            EmployeeSnapshot.import_id == latest.id,
+            EmployeeSnapshot.employee_key == emp.employee_key,
+        )
+    ).all())
+
+    positions = _distinct_positions(rows)
+    if len(positions) < 2:
+        return True, ""
+
+    choice = db.scalar(select(EmployeePositionChoice).where(
+        EmployeePositionChoice.employee_key == emp.employee_key,
+    ))
+
+    if not choice or choice.source_position not in positions:
+        return False, "Несколько должностей – требуется выбрать должность для поздравления"
+
+    if (emp.source_position or "").strip() != choice.source_position:
+        return False, "Для работника выбрана другая должность"
+
+    return True, ""
+
+
+def resolved_latest_employees(db) -> list[EmployeeSnapshot]:
+    """
+    Один объект EmployeeSnapshot на одного физического работника.
+
+    Если должность одна – берем ее.
+    Если должностей несколько и оператор сделал выбор – берем выбранную.
+    Если выбор еще не сделан – возвращаем один представитель группы;
+    birthday_send_eligibility заблокирует отправку до выбора.
+    """
+    latest = latest_successful_import(db)
+    if not latest:
+        return []
+
+    employees = list(db.scalars(
+        select(EmployeeSnapshot)
+        .where(EmployeeSnapshot.import_id == latest.id)
+        .order_by(EmployeeSnapshot.fio, EmployeeSnapshot.id)
+    ).all())
+
+    groups = {}
+    for emp in employees:
+        groups.setdefault(emp.employee_key, []).append(emp)
+
+    choices = {
+        x.employee_key: x.source_position
+        for x in db.scalars(select(EmployeePositionChoice)).all()
+    }
+
+    result = []
+    for employee_key, items in groups.items():
+        positions = _distinct_positions(items)
+        selected = choices.get(employee_key, "")
+
+        chosen = None
+        if len(positions) >= 2 and selected in positions:
+            chosen = next(
+                (
+                    x for x in items
+                    if (x.source_position or "").strip() == selected
+                ),
+                None,
+            )
+
+        result.append(chosen or items[0])
+
+    result.sort(key=lambda x: x.fio)
+    return result
+
+
 def birthday_send_eligibility(db, emp) -> tuple[bool, str]:
     if emp.hide_birthday:
         return False, "В 1С установлен запрет «Скрыть день рождения»"
+
+    position_ok, position_reason = employee_position_conflict_status(db, emp)
+    if not position_ok:
+        return False, position_reason
 
     cfg = get_all_settings(db)
     if not employee_state_is_allowed(emp, cfg):
@@ -285,17 +432,12 @@ def import_xlsx(
 
 
 def todays_employees(db):
-    latest = latest_successful_import(db)
-    if not latest:
-        return []
     today = date.today()
-    return list(db.scalars(
-        select(EmployeeSnapshot).where(
-            EmployeeSnapshot.import_id == latest.id,
-            EmployeeSnapshot.birthday_day == today.day,
-            EmployeeSnapshot.birthday_month == today.month,
-        ).order_by(EmployeeSnapshot.fio)
-    ).all())
+    return [
+        emp for emp in resolved_latest_employees(db)
+        if emp.birthday_day == today.day
+        and emp.birthday_month == today.month
+    ]
 
 
 def upcoming_birthdays(db, days=30):
@@ -311,11 +453,7 @@ def upcoming_birthdays(db, days=30):
     from datetime import timedelta
 
     today = date.today()
-    employees = list(db.scalars(
-        select(EmployeeSnapshot).where(
-            EmployeeSnapshot.import_id == latest.id,
-        )
-    ).all())
+    employees = resolved_latest_employees(db)
 
     date_map = {}
     for offset in range(1, days + 1):

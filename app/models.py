@@ -54,6 +54,18 @@ class PositionMapping(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+class EmployeePositionChoice(Base):
+    __tablename__ = "employee_position_choices"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    source_position: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
 class IntroTemplate(Base):
     __tablename__ = "intro_templates"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
