@@ -22,6 +22,14 @@ def import_xlsx(db: Session, path: Path, source="manual"):
     try:
         rows = parse_workbook(path, cfg)
         run.rows_total = len(rows)
+
+        if not rows:
+            raise ValueError(
+                "Заголовки XLSX найдены, но строки сотрудников отсутствуют. "
+                "Проверьте, что из 1С выгружен отчет с детализацией по сотрудникам, "
+                "а не только структура подразделений."
+            )
+
         valid = 0
         known_positions = {x for x in db.scalars(select(PositionMapping.source_position)).all()}
         for item in rows:

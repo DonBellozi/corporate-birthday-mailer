@@ -26,20 +26,38 @@ DEFAULTS = {
     "ad_allowed_group_dn": "", "ad_bind_user": "", "ad_bind_password": "",
 
     "xlsx_header_row": "2", "xlsx_second_header_row": "3", "xlsx_data_row": "4",
-    "xlsx_fio_column": "Сотрудник",
-    "xlsx_birthday_column": "Дата рождения",
+    "xlsx_fio_column": "Сотрудник.Физическое лицо.ФИО",
+    "xlsx_birthday_column": "Дата рождения.День, Дата рождения.Название месяца",
     "xlsx_position_column": "Должность",
     "xlsx_hide_column": "Сотрудник.Скрыть день рождения (Сотрудники)",
-    "xlsx_id_column": "",
-    "xlsx_gender_column": "",
+    "xlsx_id_column": "СНИЛС",
+    "xlsx_gender_column": "Физическое лицо.Пол",
 }
+
+LEGACY_XLSX_DEFAULTS = {
+    "xlsx_fio_column": ("Сотрудник", "Сотрудник.Физическое лицо.ФИО"),
+    "xlsx_birthday_column": ("Дата рождения", "Дата рождения.День, Дата рождения.Название месяца"),
+    "xlsx_id_column": ("", "СНИЛС"),
+    "xlsx_gender_column": ("", "Физическое лицо.Пол"),
+}
+
 
 def ensure_defaults(db: Session):
     changed = False
     for key, value in DEFAULTS.items():
-        if db.get(Setting, key) is None:
+        obj = db.get(Setting, key)
+        if obj is None:
             db.add(Setting(key=key, value=value, encrypted=False))
             changed = True
+            continue
+
+        # Одноразово обновляем старые значения первого MVP на реальные
+        # заголовки текущей выгрузки 1С. Пользовательские значения не трогаем.
+        legacy = LEGACY_XLSX_DEFAULTS.get(key)
+        if legacy and not obj.encrypted and obj.value == legacy[0]:
+            obj.value = legacy[1]
+            changed = True
+
     if changed:
         db.commit()
 

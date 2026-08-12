@@ -65,17 +65,33 @@ def build_header_map(ws, top_row: int, second_row: int | None):
                 result[normalize_key(value)] = col
     return result
 
-def find_col(headers, expected: str, required=True):
-    target = normalize_key(expected)
-    if not target:
-        return None
-    if target in headers:
-        return headers[target]
-    candidates = [(name, col) for name, col in headers.items() if target in name or name in target]
-    if len(candidates) == 1:
-        return candidates[0][1]
+def find_col(headers, expected: str, required=True, aliases=None):
+    aliases = aliases or []
+    names = [expected, *aliases]
+
+    # Сначала только точные совпадения. Это важно для заголовков вида
+    # "Сотрудник....", которых в отчете 1С несколько.
+    for name in names:
+        target = normalize_key(name)
+        if target and target in headers:
+            return headers[target]
+
+    # Затем мягкий поиск, но только если получился ровно один кандидат.
+    for name in names:
+        target = normalize_key(name)
+        if not target:
+            continue
+        candidates = [(header, col) for header, col in headers.items()
+                      if target in header or header in target]
+        unique_cols = sorted({col for _, col in candidates})
+        if len(unique_cols) == 1:
+            return unique_cols[0]
+
     if required:
-        raise ValueError(f"Не найдена колонка: {expected}")
+        raise ValueError(
+            f"Не найдена колонка: {expected}. "
+            f"Доступные заголовки: {', '.join(sorted(headers.keys()))}"
+        )
     return None
 
 def parse_workbook(path: str | Path, cfg: dict[str, str]):
@@ -87,12 +103,43 @@ def parse_workbook(path: str | Path, cfg: dict[str, str]):
     data_row = int(cfg.get("xlsx_data_row", "4"))
     headers = build_header_map(ws, h1, h2)
 
-    fio_col = find_col(headers, cfg["xlsx_fio_column"])
-    birthday_col = find_col(headers, cfg["xlsx_birthday_column"])
-    position_col = find_col(headers, cfg.get("xlsx_position_column", ""), False)
-    hide_col = find_col(headers, cfg.get("xlsx_hide_column", ""), False)
-    id_col = find_col(headers, cfg.get("xlsx_id_column", ""), False)
-    gender_col = find_col(headers, cfg.get("xlsx_gender_column", ""), False)
+    fio_col = find_col(
+        headers,
+        cfg["xlsx_fio_column"],
+        aliases=["Сотрудник.Физическое лицо.ФИО", "Физическое лицо.ФИО", "ФИО"],
+    )
+    birthday_col = find_col(
+        headers,
+        cfg["xlsx_birthday_column"],
+        aliases=[
+            "Дата рождения.День, Дата рождения.Название месяца",
+            "День месяц года",
+        ],
+    )
+    position_col = find_col(
+        headers,
+        cfg.get("xlsx_position_column", ""),
+        False,
+        aliases=["Должность"],
+    )
+    hide_col = find_col(
+        headers,
+        cfg.get("xlsx_hide_column", ""),
+        False,
+        aliases=["Сотрудник.Скрыть день рождения (Сотрудники)"],
+    )
+    id_col = find_col(
+        headers,
+        cfg.get("xlsx_id_column", ""),
+        False,
+        aliases=["СНИЛС"],
+    )
+    gender_col = find_col(
+        headers,
+        cfg.get("xlsx_gender_column", ""),
+        False,
+        aliases=["Физическое лицо.Пол", "Пол"],
+    )
 
     result = []
     for row in range(data_row, ws.max_row + 1):
