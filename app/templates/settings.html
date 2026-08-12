@@ -6,7 +6,8 @@
 <div class="card"><h2>Рассылка</h2><div class="cols">
 <div><label>Группа рассылки</label><input name="mail_recipient" value="{{ cfg.mail_recipient }}"></div>
 <div><label>Адрес отправителя</label><input name="mail_from" value="{{ cfg.mail_from }}"></div>
-<div><label>Тема письма</label><input name="mail_subject" value="{{ cfg.mail_subject }}"></div>
+<div>
+</div>
 <div><label>Время отправки</label><input type="time" name="send_time" value="{{ cfg.send_time }}"></div>
 </div>
 <label class="check"><input type="checkbox" name="auto_send_enabled" {% if cfg.auto_send_enabled=="true" %}checked{% endif %}> Автоматическая рассылка</label>

@@ -238,7 +238,7 @@ def compose_birthday_message(db, emp):
                 card_info = None
 
     recipient = cfg.get("mail_recipient", "").strip()
-    subject = cfg.get("mail_subject", "Поздравляем с Днем рождения!").strip()
+    subject = "Поздравляем С Днем Рождения!"
 
     rendered = (
         intro_text
