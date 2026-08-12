@@ -1,25 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Вступительные тексты</h1>
-{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
-<div class="card"><h2>Добавить</h2><form method="post" action="/templates/new">
-<label>Название</label><input name="name" required>
-<label>Текст</label><textarea name="body" rows="4" required>Сегодня особенный и праздничный день: свой День рождения отмечает {{ colleague.nom }} – {{ fio }}.</textarea>
-<button type="submit">Добавить</button></form></div>
+<h1>Тексты поздравлений</h1>
 
-<div class="card"><h2>Справка по переменным</h2><table>
+{% if error %}
+<div class="alert error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+<h2>Добавить</h2>
+<form method="post" action="/templates/new">
+<label>Название</label><input name="name" required>
+<label>Текст</label>
+<textarea name="body" rows="4" required>{% raw %}Сегодня особенный и праздничный день: свой День рождения отмечает {{ colleague.nom }} – {{ fio }}.{% endraw %}</textarea>
+<button type="submit">Добавить</button>
+</form>
+</div>
+
+<div class="card">
+<h2>Справка по переменным</h2>
+<table>
 <tr><th>Переменная</th><th>Значение</th></tr>
-<tr><td><code>{{ '{{ fio }}' }}</code></td><td>ФИО</td></tr>
-<tr><td><code>{{ '{{ first_name }}' }}</code></td><td>Имя</td></tr>
-<tr><td><code>{{ '{{ position }}' }}</code></td><td>Короткая должность, именительный падеж</td></tr>
-<tr><td><code>{{ '{{ colleague.nom }}' }}</code></td><td>наш коллега / наша коллега</td></tr>
-<tr><td><code>{{ '{{ colleague.gen }}' }}</code></td><td>нашего коллеги / нашей коллеги</td></tr>
-<tr><td><code>{{ '{{ colleague.dat }}' }}</code></td><td>нашему коллеге / нашей коллеге</td></tr>
-<tr><td><code>{{ '{{ colleague.acc }}' }}</code></td><td>нашего коллегу / нашу коллегу</td></tr>
-<tr><td><code>{{ '{{ pronoun.nom }}' }}</code></td><td>он / она</td></tr>
-<tr><td><code>{{ '{{ pronoun.dat }}' }}</code></td><td>ему / ей</td></tr>
-<tr><td><code>{{ '{{ birthday.date }}' }}</code></td><td>18 мая</td></tr>
-</table></div>
+<tr><td><code>{% raw %}{{ fio }}{% endraw %}</code></td><td>ФИО</td></tr>
+<tr><td><code>{% raw %}{{ first_name }}{% endraw %}</code></td><td>Имя</td></tr>
+<tr><td><code>{% raw %}{{ position }}{% endraw %}</code></td><td>Должность для поздравления, мужской род, родительный падеж</td></tr>
+<tr><td><code>{% raw %}{{ colleague.nom }}{% endraw %}</code></td><td>наш коллега / наша коллега</td></tr>
+<tr><td><code>{% raw %}{{ colleague.gen }}{% endraw %}</code></td><td>нашего коллеги / нашей коллеги</td></tr>
+<tr><td><code>{% raw %}{{ colleague.dat }}{% endraw %}</code></td><td>нашему коллеге / нашей коллеге</td></tr>
+<tr><td><code>{% raw %}{{ colleague.acc }}{% endraw %}</code></td><td>нашего коллегу / нашу коллегу</td></tr>
+<tr><td><code>{% raw %}{{ pronoun.nom }}{% endraw %}</code></td><td>он / она</td></tr>
+<tr><td><code>{% raw %}{{ pronoun.dat }}{% endraw %}</code></td><td>ему / ей</td></tr>
+<tr><td><code>{% raw %}{{ birthday.date }}{% endraw %}</code></td><td>18 мая</td></tr>
+</table>
+</div>
 
 {% for x in items %}
 <div class="card">
