@@ -494,7 +494,7 @@ async def settings_post(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@app.post("/settings/test-ad", response_class=HTMLResponse)
+@app.post("/settings/test-ad")
 async def settings_test_ad(
     request: Request,
     db: Session = Depends(get_db),
@@ -519,24 +519,17 @@ async def settings_test_ad(
     cfg["ad_enabled"] = "true" if "ad_enabled" in form else "false"
     cfg["ad_ssl"] = "true" if "ad_ssl" in form else "false"
 
+    # Если пароль введен в форме, проверяем именно его.
+    # Если поле пустое – используем уже сохраненный пароль.
     entered_password = str(form.get("ad_bind_password", "") or "")
     if entered_password:
         cfg["ad_bind_password"] = entered_password
 
     ok, message = test_ad_connection(cfg)
 
-    return page(
-        request,
-        "settings.html",
-        cfg=cfg,
-        saved=False,
-        employee_states=current_employee_states(db),
-        blocked_states=blocked_employee_states(cfg),
-        test_message=None,
-        test_error=None,
-        test_recipient="",
-        ad_test_message=message if ok else None,
-        ad_test_error=None if ok else message,
+    return JSONResponse(
+        {"ok": ok, "message": message},
+        status_code=200 if ok else 400,
     )
 
 

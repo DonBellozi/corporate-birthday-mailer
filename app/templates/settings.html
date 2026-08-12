@@ -104,18 +104,11 @@
   Поле «Домен NetBIOS» – короткое имя домена, например DOMAIN, а не domain.ru.
   При входе пароль проверяется прямым LDAP bind от имени самого пользователя.
   Служебная учетная запись используется только для поиска пользователей в разделе «Пользователи».
-  При проверке приложение автоматически попробует короткий логин, NETBIOS\логин,
-  UPN и NTLM. Для учетной записи достаточно обычных прав чтения AD.
-  Локальная учетная запись администратора
+  Для нее достаточно обычных прав чтения AD. Локальная учетная запись администратора
   сохраняется как аварийный вход.
 </p>
-{% if ad_test_message %}<div class="alert success">{{ ad_test_message }}</div>{% endif %}
-{% if ad_test_error %}<div class="alert error">{{ ad_test_error }}</div>{% endif %}
-<button
-  type="submit"
-  formaction="/settings/test-ad"
-  formmethod="post"
->
+<div id="ad-test-message" class="alert" style="display:none"></div>
+<button type="button" id="ad-test-button">
   Проверить подключение к AD
 </button>
 </div>
@@ -162,5 +155,55 @@
   </div>
 </form>
 </div>
+
+<script>
+(function () {
+  const button = document.getElementById("ad-test-button");
+  const message = document.getElementById("ad-test-message");
+  if (!button || !message) return;
+
+  button.addEventListener("click", async function () {
+    const form = button.closest("form");
+    if (!form) return;
+
+    button.disabled = true;
+    const oldText = button.textContent;
+    button.textContent = "Проверка...";
+    message.style.display = "none";
+    message.className = "alert";
+    message.textContent = "";
+
+    try {
+      const response = await fetch("/settings/test-ad", {
+        method: "POST",
+        body: new FormData(form),
+        credentials: "same-origin"
+      });
+
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (_) {
+        data = {};
+      }
+
+      message.textContent = data.message || (
+        response.ok
+          ? "Подключение к Active Directory выполнено успешно."
+          : "Ошибка проверки Active Directory."
+      );
+      message.className = response.ok ? "alert success" : "alert error";
+      message.style.display = "block";
+    } catch (error) {
+      message.textContent = "Ошибка запроса: " + error;
+      message.className = "alert error";
+      message.style.display = "block";
+    } finally {
+      button.disabled = false;
+      button.textContent = oldText;
+    }
+  });
+})();
+</script>
 
 {% endblock %}
