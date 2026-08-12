@@ -39,6 +39,16 @@ def bootstrap():
                 "ADD COLUMN employee_state VARCHAR(200) NOT NULL DEFAULT ''"
             ))
 
+    position_columns = {
+        col["name"] for col in inspect(engine).get_columns("position_mappings")
+    }
+    if "congratulate" not in position_columns:
+        with engine.begin() as conn:
+            conn.execute(sql_text(
+                "ALTER TABLE position_mappings "
+                "ADD COLUMN congratulate BOOLEAN NOT NULL DEFAULT TRUE"
+            ))
+
     with SessionLocal() as db:
         ensure_defaults(db)
         login = os.getenv("BOOTSTRAP_ADMIN_LOGIN", "admin")
@@ -395,7 +405,16 @@ async def positions_save(item_id: int, request: Request, db: Session = Depends(g
     item.display_position = str(form.get("display_position", "")).strip()
     item.confirmed = bool(item.display_position)
     item.active = "active" in form
-    db.add(AuditLog(actor=actor, action="position_changed", details=f"{item_id}: {item.display_position}"))
+    item.congratulate = "congratulate" in form
+    db.add(AuditLog(
+        actor=actor,
+        action="position_changed",
+        details=(
+            f"{item_id}: {item.display_position}; "
+            f"использовать должность={'да' if item.active else 'нет'}; "
+            f"поздравлять={'да' if item.congratulate else 'нет'}"
+        ),
+    ))
     db.commit()
     return RedirectResponse("/positions", 303)
 

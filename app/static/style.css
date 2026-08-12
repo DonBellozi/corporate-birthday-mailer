@@ -68,3 +68,7 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
   padding-top:4px;
   border-top:1px solid #dfe3e8;
 }
+
+.position-options{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:8px}
+.position-options .check{margin-top:4px;margin-bottom:4px}
+.position-congratulate-warning{font-size:12px;margin:2px 0 4px 0}

@@ -45,10 +45,25 @@
     {% endif %}
   </div>
 
-  <label class="check">
-    <input type="checkbox" name="active" {% if x.active %}checked{% endif %}>
-    Использовать должность
-  </label>
+  <div class="position-options">
+    <label class="check">
+      <input type="checkbox"
+             name="congratulate"
+             class="position-congratulate"
+             {% if x.congratulate %}checked{% endif %}>
+      Поздравлять сотрудников с этой должностью
+    </label>
+
+    <label class="check">
+      <input type="checkbox" name="active" {% if x.active %}checked{% endif %}>
+      Использовать должность в тексте
+    </label>
+  </div>
+
+  <div class="position-congratulate-warning bad"
+       {% if x.congratulate %}hidden{% endif %}>
+    Сотрудники с этой полной связкой подразделения и должности не будут поздравляться.
+  </div>
 
   <button type="submit" class="position-save">{{ "Сохранить" if x.confirmed else "Подтвердить / изменить" }}</button>
 </form>
@@ -62,6 +77,15 @@
 <script>
 (() => {
   document.querySelectorAll(".position-form").forEach((form) => {
+    const congratulate = form.querySelector(".position-congratulate");
+    const warning = form.closest(".position-card").querySelector(".position-congratulate-warning");
+
+    if (congratulate && warning) {
+      congratulate.addEventListener("change", () => {
+        warning.hidden = congratulate.checked;
+      });
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
 

@@ -118,6 +118,16 @@ def birthday_send_eligibility(db, emp) -> tuple[bool, str]:
         state = getattr(emp, "employee_state", "") or "Не указано"
         return False, f"Состояние «{state}» исключено из поздравлений"
 
+    # Запрет по должности привязан к полному source_position:
+    # вся иерархия подразделений + должность 1С.
+    source_position = getattr(emp, "source_position", "") or ""
+    if source_position:
+        mapping = db.scalar(select(PositionMapping).where(
+            PositionMapping.source_position == source_position,
+        ))
+        if mapping and not mapping.congratulate:
+            return False, "Эта должность исключена из поздравлений"
+
     return True, ""
 
 
