@@ -65,6 +65,83 @@ def build_header_map(ws, top_row: int, second_row: int | None):
                 result[normalize_key(value)] = col
     return result
 
+
+HEADER_FIO_ALIASES = {
+    normalize_key("Сотрудник.Физическое лицо.ФИО"),
+    normalize_key("Физическое лицо.ФИО"),
+    normalize_key("ФИО"),
+}
+
+HEADER_HIDE_ALIASES = {
+    normalize_key("Сотрудник.Скрыть день рождения (Сотрудники)"),
+}
+
+HEADER_POSITION_ALIASES = {
+    normalize_key("Должность"),
+}
+
+
+def detect_header_rows(ws, configured_top=2, configured_second=3):
+    """
+    Отчет 1С использует две строки заголовков:
+      строка 2 — основные заголовки;
+      строка 3 — уточняющие подзаголовки;
+      строка 4 — начало содержимого.
+
+    Сначала проверяем настроенные строки. Если они были случайно изменены
+    в веб-интерфейсе или остались от старой версии, автоматически ищем
+    строку с заголовком ФИО среди первых 15 строк.
+    """
+    candidates = []
+
+    try:
+        top = int(configured_top)
+        second = int(configured_second) if configured_second else top + 1
+        candidates.append((top, second))
+    except Exception:
+        pass
+
+    # Фактическая структура текущего отчета 1С.
+    candidates.append((2, 3))
+
+    # Дополнительный автопоиск.
+    for row in range(1, min(ws.max_row, 15) + 1):
+        values = {
+            normalize_key(ws.cell(row, col).value)
+            for col in range(1, ws.max_column + 1)
+            if normalize_text(ws.cell(row, col).value)
+        }
+
+        if values & HEADER_FIO_ALIASES:
+            candidates.append((row, row + 1 if row < ws.max_row else None))
+
+    seen = set()
+    for top, second in candidates:
+        if not top or top < 1 or top > ws.max_row:
+            continue
+        key = (top, second)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        headers = build_header_map(ws, top, second)
+        header_names = set(headers.keys())
+
+        # Заголовок ФИО обязателен. Дополнительные признаки защищают
+        # от случайного совпадения текста "ФИО" внутри содержимого.
+        has_fio = bool(header_names & HEADER_FIO_ALIASES)
+        has_position = bool(header_names & HEADER_POSITION_ALIASES)
+        has_hide = bool(header_names & HEADER_HIDE_ALIASES)
+
+        if has_fio and (has_position or has_hide):
+            return top, second
+
+    raise ValueError(
+        "Не удалось определить строки заголовков XLSX. "
+        "Ожидался заголовок «Сотрудник.Физическое лицо.ФИО» "
+        "во 2-й строке и подзаголовки в 3-й."
+    )
+
 def find_col(headers, expected: str, required=True, aliases=None):
     aliases = aliases or []
     names = [expected, *aliases]
@@ -98,9 +175,18 @@ def parse_workbook(path: str | Path, cfg: dict[str, str]):
     wb = load_workbook(path, data_only=True)
     ws = wb.active
 
-    h1 = int(cfg.get("xlsx_header_row", "2"))
-    h2 = int(cfg.get("xlsx_second_header_row", "3") or 0) or None
-    data_row = int(cfg.get("xlsx_data_row", "4"))
+    # Не доверяем слепо сохраненным номерам строк в настройках.
+    # Для текущей выгрузки 1С это 2-я и 3-я строки, но при необходимости
+    # парсер найдет их сам.
+    h1, h2 = detect_header_rows(
+        ws,
+        cfg.get("xlsx_header_row", "2"),
+        cfg.get("xlsx_second_header_row", "3"),
+    )
+
+    # Содержимое начинается сразу после второй строки заголовков.
+    # Для текущего отчета: 2–3 заголовки, данные с 4-й.
+    data_row = (h2 + 1) if h2 else (h1 + 1)
     headers = build_header_map(ws, h1, h2)
 
     fio_col = find_col(
