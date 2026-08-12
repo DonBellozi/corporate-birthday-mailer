@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>XLSX</h1>
+{% if message %}<div class="alert">{{ message }}</div>{% endif %}
+<div class="grid">
+<div class="card"><h2>Загрузить вручную</h2>
+<form method="post" action="/imports/upload" enctype="multipart/form-data">
+<input type="file" name="file" accept=".xlsx" required><button type="submit">Импортировать</button></form></div>
+<div class="card"><h2>Получить из почты</h2>
+<form method="post" action="/imports/fetch-mail"><button type="submit">Проверить IMAP сейчас</button></form></div>
+</div>
+<div class="card"><h2>История</h2><table>
+<tr><th>Дата</th><th>Источник</th><th>Файл</th><th>Строк</th><th>Результат</th></tr>
+{% for x in items %}<tr><td>{{ x.received_at.strftime("%d.%m.%Y %H:%M") }}</td><td>{{ x.source }}</td><td>{{ x.filename }}</td>
+<td>{{ x.rows_valid }}/{{ x.rows_total }}</td><td>{{ "Успешно" if x.success else x.error_text }}</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

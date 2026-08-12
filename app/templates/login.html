@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card narrow">
+<h1>Вход</h1>
+<p class="muted">Локальный администратор или учетная запись Active Directory.</p>
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+<form method="post">
+<label>Логин</label><input name="login" required autocomplete="username">
+<label>Пароль</label><input type="password" name="password" required autocomplete="current-password">
+<button type="submit">Войти</button>
+</form>
+</div>
+{% endblock %}

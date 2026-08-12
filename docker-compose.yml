@@ -1,0 +1,46 @@
+services:
+  app:
+    build: .
+    container_name: corporate-birthday-mailer
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://birthday:${POSTGRES_PASSWORD:-change_me}@db:5432/birthday
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-CHANGE_ME_TO_A_LONG_RANDOM_SECRET}
+      BOOTSTRAP_ADMIN_LOGIN: ${BOOTSTRAP_ADMIN_LOGIN:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe123!}
+      TZ: ${TZ:-Europe/Moscow}
+    ports:
+      - "8082:8082"
+    volumes:
+      - birthday_cards:/app/data/cards
+      - birthday_imports:/app/data/imports
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  db:
+    image: postgres:16-alpine
+    container_name: corporate-birthday-mailer-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: birthday
+      POSTGRES_USER: birthday
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - birthday_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U birthday -d birthday"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  birthday_db:
+  birthday_cards:
+  birthday_imports:

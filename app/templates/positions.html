@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Должности</h1>
+<p class="muted">Короткая должность для поздравления всегда в именительном падеже.</p>
+{% for x in items %}
+<div class="card"><form method="post" action="/positions/{{ x.id }}">
+<div class="source">{{ x.source_position }}</div>
+<label>Для поздравления</label>
+<input name="display_position" value="{{ x.display_position }}" placeholder="Короткая должность">
+<label class="check"><input type="checkbox" name="active" {% if x.active %}checked{% endif %}> Использовать</label>
+<button type="submit">{{ "Сохранить" if x.confirmed else "Подтвердить" }}</button>
+{% if not x.confirmed %}<span class="badge">Требует настройки</span>{% endif %}
+</form></div>
+{% endfor %}
+{% if not items %}<div class="card muted">Появятся после первого импорта XLSX.</div>{% endif %}
+{% endblock %}

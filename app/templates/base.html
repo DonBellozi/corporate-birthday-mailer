@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}Добрый день{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+<div><div class="brand">Добрый день</div><div class="subtitle">Corporate Birthday Mailer</div></div>
+{% if user %}<div class="user">{{ user }} · <a href="/logout">Выйти</a></div>{% endif %}
+</header>
+{% if user %}
+<nav>
+<a href="/">Главная</a><a href="/today">Сегодня</a><a href="/imports">XLSX</a>
+<a href="/positions">Должности</a><a href="/templates">Вступления</a>
+<a href="/settings">Настройки</a><a href="/logs">Журнал</a>
+</nav>
+{% endif %}
+<main>{% block content %}{% endblock %}</main>
+</body></html>

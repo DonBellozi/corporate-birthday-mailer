@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Журнал</h1>
+<div class="card"><h2>Рассылки</h2><table>
+<tr><th>ФИО</th><th>Год</th><th>Статус</th><th>Отправлено</th><th>Ошибка</th></tr>
+{% for x in mails %}<tr><td>{{ x.fio }}</td><td>{{ x.birthday_year }}</td><td>{{ x.status }}</td>
+<td>{{ x.sent_at.strftime("%d.%m.%Y %H:%M") if x.sent_at else "" }}</td><td>{{ x.error_text or "" }}</td></tr>{% endfor %}
+</table></div>
+<div class="card"><h2>Административные действия</h2><table>
+<tr><th>Дата</th><th>Пользователь</th><th>Действие</th><th>Детали</th></tr>
+{% for x in audits %}<tr><td>{{ x.created_at.strftime("%d.%m.%Y %H:%M") }}</td><td>{{ x.actor }}</td><td>{{ x.action }}</td><td>{{ x.details }}</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

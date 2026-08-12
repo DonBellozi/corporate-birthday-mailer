@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Настройки</h1>
+{% if saved %}<div class="alert success">Настройки сохранены.</div>{% endif %}
+<form method="post">
+<div class="card"><h2>Рассылка</h2><div class="cols">
+<div><label>Группа рассылки</label><input name="mail_recipient" value="{{ cfg.mail_recipient }}"></div>
+<div><label>Адрес отправителя</label><input name="mail_from" value="{{ cfg.mail_from }}"></div>
+<div><label>Тема письма</label><input name="mail_subject" value="{{ cfg.mail_subject }}"></div>
+<div><label>Время отправки</label><input type="time" name="send_time" value="{{ cfg.send_time }}"></div>
+</div>
+<label class="check"><input type="checkbox" name="auto_send_enabled" {% if cfg.auto_send_enabled=="true" %}checked{% endif %}> Автоматическая рассылка</label>
+<label class="check"><input type="checkbox" name="positions_enabled" {% if cfg.positions_enabled=="true" %}checked{% endif %}> Использовать должности</label>
+<label class="check"><input type="checkbox" name="wishes_enabled" {% if cfg.wishes_enabled=="true" %}checked{% endif %}> Использовать пожелания</label>
+<label class="check"><input type="checkbox" name="cards_enabled" {% if cfg.cards_enabled=="true" %}checked{% endif %}> Использовать открытки</label>
+</div>
+
+<div class="card"><h2>Входящая почта · IMAP</h2><div class="cols">
+<div><label>Сервер</label><input name="imap_host" value="{{ cfg.imap_host }}"></div>
+<div><label>Порт</label><input name="imap_port" value="{{ cfg.imap_port }}"></div>
+<div><label>Логин</label><input name="imap_login" value="{{ cfg.imap_login }}"></div>
+<div><label>Пароль</label><input type="password" name="imap_password" placeholder="Не менять"></div>
+<div><label>Папка</label><input name="imap_folder" value="{{ cfg.imap_folder }}"></div>
+<div><label>Интервал, минут</label><input name="imap_poll_minutes" value="{{ cfg.imap_poll_minutes }}"></div>
+<div><label>Фильтр отправителя</label><input name="imap_sender_filter" value="{{ cfg.imap_sender_filter }}"></div>
+<div><label>Фильтр темы</label><input name="imap_subject_filter" value="{{ cfg.imap_subject_filter }}"></div>
+</div><label class="check"><input type="checkbox" name="imap_ssl" {% if cfg.imap_ssl=="true" %}checked{% endif %}> SSL</label></div>
+
+<div class="card"><h2>Исходящая почта · SMTP</h2><div class="cols">
+<div><label>Сервер</label><input name="smtp_host" value="{{ cfg.smtp_host }}"></div>
+<div><label>Порт</label><input name="smtp_port" value="{{ cfg.smtp_port }}"></div>
+<div><label>Логин</label><input name="smtp_login" value="{{ cfg.smtp_login }}"></div>
+<div><label>Пароль</label><input type="password" name="smtp_password" placeholder="Не менять"></div>
+</div>
+<label class="check"><input type="checkbox" name="smtp_starttls" {% if cfg.smtp_starttls=="true" %}checked{% endif %}> STARTTLS</label>
+<label class="check"><input type="checkbox" name="smtp_ssl" {% if cfg.smtp_ssl=="true" %}checked{% endif %}> SSL</label></div>
+
+<div class="card"><h2>Active Directory</h2><div class="cols">
+<div><label>Сервер AD</label><input name="ad_server" value="{{ cfg.ad_server }}"></div>
+<div><label>Порт</label><input name="ad_port" value="{{ cfg.ad_port }}"></div>
+<div><label>Домен</label><input name="ad_domain" value="{{ cfg.ad_domain }}" placeholder="DOMAIN"></div>
+<div><label>Base DN</label><input name="ad_base_dn" value="{{ cfg.ad_base_dn }}" placeholder="DC=domain,DC=ru"></div>
+<div><label>Фильтр</label><input name="ad_user_filter" value="{{ cfg.ad_user_filter }}"></div>
+<div><label>Разрешенная группа DN</label><input name="ad_allowed_group_dn" value="{{ cfg.ad_allowed_group_dn }}"></div>
+<div><label>Служебная УЗ</label><input name="ad_bind_user" value="{{ cfg.ad_bind_user }}"></div>
+<div><label>Пароль служебной УЗ</label><input type="password" name="ad_bind_password" placeholder="Не менять"></div>
+</div>
+<label class="check"><input type="checkbox" name="ad_enabled" {% if cfg.ad_enabled=="true" %}checked{% endif %}> Включить AD</label>
+<label class="check"><input type="checkbox" name="ad_ssl" {% if cfg.ad_ssl=="true" %}checked{% endif %}> LDAPS</label></div>
+
+<div class="card"><h2>Колонки XLSX</h2><div class="cols">
+<div><label>Строка заголовков</label><input name="xlsx_header_row" value="{{ cfg.xlsx_header_row }}"></div>
+<div><label>Вторая строка заголовков</label><input name="xlsx_second_header_row" value="{{ cfg.xlsx_second_header_row }}"></div>
+<div><label>Первая строка данных</label><input name="xlsx_data_row" value="{{ cfg.xlsx_data_row }}"></div>
+<div><label>ФИО</label><input name="xlsx_fio_column" value="{{ cfg.xlsx_fio_column }}"></div>
+<div><label>Дата рождения</label><input name="xlsx_birthday_column" value="{{ cfg.xlsx_birthday_column }}"></div>
+<div><label>Полная должность</label><input name="xlsx_position_column" value="{{ cfg.xlsx_position_column }}"></div>
+<div><label>Скрыть день рождения</label><input name="xlsx_hide_column" value="{{ cfg.xlsx_hide_column }}"></div>
+<div><label>Стабильный ID</label><input name="xlsx_id_column" value="{{ cfg.xlsx_id_column }}"></div>
+<div><label>Пол, если есть</label><input name="xlsx_gender_column" value="{{ cfg.xlsx_gender_column }}"></div>
+</div></div>
+<button class="primary" type="submit">Сохранить</button>
+</form>
+{% endblock %}

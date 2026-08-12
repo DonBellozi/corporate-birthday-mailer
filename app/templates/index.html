@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Обзор</h1>
+<div class="grid">
+<div class="card"><h3>Последний XLSX</h3>
+{% if latest %}<div class="big">{{ "Успешно" if latest.success else "Ошибка" }}</div>
+<div>{{ latest.received_at.strftime("%d.%m.%Y %H:%M") }}</div><div class="muted">{{ latest.rows_valid }} работников</div>
+{% else %}<div class="muted">Файл еще не импортирован</div>{% endif %}</div>
+<div class="card"><h3>Сегодня</h3><div class="big">{{ upcoming|length }}</div><div class="muted">дней рождения</div></div>
+<div class="card"><h3>Должности</h3><div class="big">{{ unconfirmed_count }}</div><div class="muted">требуют настройки</div></div>
+</div>
+<div class="card"><h2>Сегодняшние именинники</h2>
+{% if upcoming %}
+<table><tr><th>ФИО</th><th>Пол</th><th>Запрет</th></tr>
+{% for x in upcoming %}<tr><td>{{ x.fio }}</td><td>{{ x.gender }}</td><td>{{ "Да" if x.hide_birthday else "Нет" }}</td></tr>{% endfor %}
+</table>
+{% else %}<p class="muted">Сегодня именинников нет.</p>{% endif %}
+</div>
+{% endblock %}

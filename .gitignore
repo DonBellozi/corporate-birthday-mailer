@@ -1,0 +1,54 @@
+# PyCharm / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+data/
+uploads/
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Coverage
+.coverage
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Docker local overrides
+docker-compose.override.yml
