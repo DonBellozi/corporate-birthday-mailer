@@ -1,6 +1,6 @@
 import uuid
 
-from ldap3 import ALL, Connection, Server, SUBTREE
+from ldap3 import ALL, Connection, Server, SUBTREE, NTLM
 from ldap3.core.exceptions import (
     LDAPException,
     LDAPInvalidCredentialsResult,
@@ -163,48 +163,144 @@ def _find_user_by_login(
     return identity
 
 
+
+def _dns_domain_from_base_dn(cfg: dict[str, str]) -> str:
+    """
+    DC=example,DC=local -> example.local
+    """
+    base_dn = cfg.get("ad_base_dn", "").strip()
+    parts = []
+    for item in base_dn.split(","):
+        item = item.strip()
+        if item[:3].lower() == "dc=" and len(item) > 3:
+            parts.append(item[3:].strip())
+    return ".".join(x for x in parts if x)
+
+
+def _service_bind_candidates(cfg: dict[str, str]) -> list[tuple[str, str]]:
+    """
+    Возвращает варианты (имя, тип аутентификации).
+
+    simple:
+      - значение как введено;
+      - NETBIOS\\login;
+      - login@dns-domain.
+
+    ntlm:
+      - NETBIOS\\login.
+    """
+    raw = cfg.get("ad_bind_user", "").strip()
+    if not raw:
+        return []
+
+    short = _short_login(raw)
+    netbios = cfg.get("ad_domain", "").strip()
+    dns_domain = _dns_domain_from_base_dn(cfg)
+
+    candidates = []
+
+    def add(user: str, auth: str = "simple"):
+        user = (user or "").strip()
+        key = (user.casefold(), auth)
+        if user and key not in {
+            (x[0].casefold(), x[1]) for x in candidates
+        }:
+            candidates.append((user, auth))
+
+    # 1. Ровно то, что ввел администратор.
+    add(raw, "simple")
+
+    # 2. Стандартное down-level имя.
+    if short and netbios:
+        add(f"{netbios}\\{short}", "simple")
+
+    # 3. UPN, если DNS-домен можно восстановить из Base DN.
+    if short and dns_domain:
+        add(f"{short}@{dns_domain}", "simple")
+
+    # 4. NTLM для DOMAIN\\user.
+    if short and netbios:
+        add(f"{netbios}\\{short}", "ntlm")
+
+    return candidates
+
+
+def _connect_service_account(
+    cfg: dict[str, str],
+) -> tuple[Connection, str]:
+    password = cfg.get("ad_bind_password", "")
+    if not password:
+        raise RuntimeError(
+            "Не указан пароль служебной учетной записи Active Directory"
+        )
+
+    candidates = _service_bind_candidates(cfg)
+    if not candidates:
+        raise RuntimeError(
+            "Не указана служебная учетная запись Active Directory"
+        )
+
+    errors = []
+
+    for user, auth in candidates:
+        try:
+            kwargs = {
+                "user": user,
+                "password": password,
+                "auto_bind": True,
+                "raise_exceptions": True,
+            }
+            if auth == "ntlm":
+                kwargs["authentication"] = NTLM
+
+            conn = Connection(
+                _server(cfg),
+                **kwargs,
+            )
+            label = (
+                f"{user} · NTLM"
+                if auth == "ntlm"
+                else f"{user} · SIMPLE"
+            )
+            return conn, label
+
+        except LDAPInvalidCredentialsResult:
+            errors.append(f"{user} · {auth.upper()}: invalidCredentials")
+        except LDAPException as exc:
+            errors.append(f"{user} · {auth.upper()}: {exc.__class__.__name__}")
+        except Exception as exc:
+            errors.append(f"{user} · {auth.upper()}: {exc.__class__.__name__}")
+
+    raise RuntimeError(
+        "Не удалось выполнить bind служебной учетной записи. "
+        "Проверены варианты: " + "; ".join(errors)
+    )
+
+
 def _search_connection(cfg: dict[str, str]) -> Connection:
     """
-    Служебная УЗ нужна только для поиска пользователей в разделе
-    «Пользователи». Вход доменных пользователей от нее не зависит.
+    Служебная УЗ нужна только для поиска пользователей.
+    Формат имени подбирается автоматически.
     """
-    bind_user = cfg.get("ad_bind_user", "").strip()
-    bind_password = cfg.get("ad_bind_password", "")
-
-    if not bind_user or not bind_password:
-        raise RuntimeError(
-            "Для поиска пользователей укажите служебную учетную запись Active Directory"
-        )
-
-    try:
-        return Connection(
-            _server(cfg),
-            user=_bind_name(bind_user, cfg),
-            password=bind_password,
-            auto_bind=True,
-            raise_exceptions=True,
-        )
-    except LDAPInvalidCredentialsResult as exc:
-        raise RuntimeError(
-            "Неверный логин или пароль служебной учетной записи Active Directory"
-        ) from exc
+    conn, _ = _connect_service_account(cfg)
+    return conn
 
 
 def test_ad_connection(cfg: dict[str, str]) -> tuple[bool, str]:
     """
-    Проверяет именно служебное подключение, которое используется
-    администратором для поиска пользователей.
+    Проверяет служебное подключение и показывает, какая форма bind сработала.
     """
     if not _bool(cfg.get("ad_enabled", "false")):
         return False, "Авторизация через Active Directory отключена"
 
     try:
-        conn = _search_connection(cfg)
+        conn, bind_label = _connect_service_account(cfg)
         conn.unbind()
         mode = "LDAPS" if _bool(cfg.get("ad_ssl", "false")) else "LDAP"
         return True, (
-            f"Подключение к Active Directory выполнено успешно "
-            f"({mode}, порт {cfg.get('ad_port', '389')})."
+            "Подключение к Active Directory выполнено успешно. "
+            f"{mode}, порт {cfg.get('ad_port', '389')}; "
+            f"bind: {bind_label}."
         )
     except Exception as exc:
         return False, str(exc)
