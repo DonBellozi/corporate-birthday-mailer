@@ -128,27 +128,6 @@
       const info = [];
       info.push(`Тема: ${data.subject || "не указана"}`);
 
-      if (data.position) {
-        info.push(`Должность: ${data.position}`);
-      } else {
-        info.push("Должность: не будет указана");
-      }
-
-      if (data.intro_name) {
-        info.push(`Текст: ${data.intro_name}`);
-      }
-
-      if (data.card_name) {
-        const orientation = data.card_orientation ? ` · ${data.card_orientation}` : "";
-        info.push(`Открытка: ${data.card_name}${orientation}`);
-      } else {
-        info.push("Открытка: не используется");
-      }
-
-      if (data.warning) {
-        info.push(`ВНИМАНИЕ: ${data.warning}`);
-      }
-
       meta.textContent = info.join("\\n");
       frame.srcdoc = data.html || "";
     } catch (e) {

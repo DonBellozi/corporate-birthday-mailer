@@ -242,7 +242,6 @@ def compose_birthday_message(db, emp):
 
     rendered = (
         intro_text
-        + ("\n" + position if position else "")
         + ("\n" + wish_text if wish_text else "")
         + (f"\n[Открытка: {card.name}]" if card else "")
     )

@@ -74,11 +74,6 @@ def email_html(
         accent, text_color, bg = "#555555", "#333333", "#fafafa"
 
     position_block = ""
-    if position:
-        position_block = (
-            f'<tr><td style="padding:0 34px 18px 34px;font-size:15px;line-height:1.5;'
-            f'color:{accent};">{html.escape(position)}</td></tr>'
-        )
 
     wish_block = ""
     if wish_text:
