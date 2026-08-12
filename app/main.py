@@ -64,8 +64,15 @@ def require_user(request):
     return user
 
 def page(request, template, **context):
-    context.update({"request": request, "user": user_name(request)})
-    return templates.TemplateResponse(template, context)
+    context.update({
+        "request": request,
+        "user": user_name(request),
+    })
+    return templates.TemplateResponse(
+        request=request,
+        name=template,
+        context=context,
+    )
 
 @app.get("/health")
 def health():
