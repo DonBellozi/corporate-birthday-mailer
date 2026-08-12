@@ -185,85 +185,6 @@ def _find_nearest_unit(units: list[str], wanted_type: str | None = None):
     return None, None
 
 
-def title_to_genitive_masculine(title: str) -> tuple[str, bool]:
-    """
-    Приводит кадровую должность к мужскому роду, ед. числу,
-    родительному падежу.
-
-    Возвращает (текст, уверенно_ли_преобразовано).
-    Используем явные кадровые шаблоны вместо общей морфологии, чтобы
-    не получить неожиданное склонение фамилий, аббревиатур и названий.
-    """
-    title = _clean(title)
-    key = _key(title)
-
-    # Более длинные и специфичные правила должны идти раньше коротких.
-    replacements = (
-        ("первый заместитель директора", "Первого заместителя директора"),
-        ("заместитель директора", "Заместителя директора"),
-        ("помощник директора", "Помощника директора"),
-        ("генеральный директор", "Генерального директора"),
-
-        ("заместитель начальника отдела", "Заместителя начальника отдела"),
-        ("начальник отдела", "Начальника отдела"),
-        ("заместитель начальника управления", "Заместителя начальника управления"),
-        ("начальник управления", "Начальника управления"),
-
-        ("заместитель руководителя департамента", "Заместителя руководителя департамента"),
-        ("руководитель департамента", "Руководителя департамента"),
-        ("заместитель руководителя группы", "Заместителя руководителя группы"),
-        ("руководитель группы", "Руководителя группы"),
-        ("заместитель руководителя", "Заместителя руководителя"),
-        ("руководитель проекта", "Руководителя проекта"),
-        ("руководитель", "Руководителя"),
-
-        ("заведующий сектором", "Заведующего сектором"),
-        ("заведующая сектором", "Заведующего сектором"),
-
-        ("главный инженер проекта", "Главного инженера проекта"),
-        ("ведущий инженер-геодезист", "Ведущего инженера-геодезиста"),
-        ("главный инженер", "Главного инженера"),
-        ("ведущий инженер", "Ведущего инженера"),
-        ("инженер-геодезист", "Инженера-геодезиста"),
-        ("инженер", "Инженера"),
-
-        ("главный специалист", "Главного специалиста"),
-        ("ведущий специалист", "Ведущего специалиста"),
-        ("старший специалист", "Старшего специалиста"),
-        ("специалист", "Специалиста"),
-
-        ("главный эксперт", "Главного эксперта"),
-        ("ведущий эксперт", "Ведущего эксперта"),
-        ("старший эксперт", "Старшего эксперта"),
-        ("эксперт", "Эксперта"),
-
-        ("главный консультант", "Главного консультанта"),
-        ("ведущий консультант", "Ведущего консультанта"),
-        ("консультант", "Консультанта"),
-
-        ("старший менеджер проекта", "Старшего менеджера проекта"),
-        ("менеджер проекта", "Менеджера проекта"),
-        ("старший менеджер", "Старшего менеджера"),
-        ("менеджер", "Менеджера"),
-
-        ("советник директора", "Советника директора"),
-        ("советник", "Советника"),
-        ("директор", "Директора"),
-    )
-
-    for source, target in replacements:
-        if key == source:
-            return target, True
-        if key.startswith(source + " "):
-            # Сохраняем хвост исходной должности без изменений:
-            # "Советник директора по общим вопросам" ->
-            # "Советника директора по общим вопросам".
-            tail = title[len(source):]
-            return _clean(target + tail), True
-
-    return title, False
-
-
 # Должности, которые сами по себе уже достаточно информативны.
 SELF_CONTAINED_PREFIXES = (
     "советник ",
@@ -341,32 +262,35 @@ def suggest_position(source_position: str) -> PositionSuggestion:
         return PositionSuggestion("", 0.0, "Не удалось выделить должность")
 
     title_key = _key(title)
-    title_gen, title_inflected = title_to_genitive_masculine(title)
+
+    if title_key.startswith("заведующая сектором"):
+        title = re.sub(
+            r"^заведующая\s+сектором",
+            "Заведующий сектором",
+            title,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        title_key = _key(title)
 
     # Уже самодостаточная должность.
     if any(title_key.startswith(prefix) for prefix in SELF_CONTAINED_PREFIXES):
-        confidence = 0.98 if title_inflected else 0.70
-        return PositionSuggestion(
-            title_gen,
-            confidence,
-            "Должность приведена к мужскому роду и родительному падежу",
-        )
+        return PositionSuggestion(title, 0.98, "Должность самодостаточна")
 
     # Не угадываем спорные роли.
     if any(title_key.startswith(prefix) for prefix in AMBIGUOUS_TITLES):
-        return PositionSuggestion(title_gen, 0.35, "Должность склонена, но нужен выбор уровня подразделения")
+        return PositionSuggestion(title, 0.35, "Должность определена, но нужен выбор уровня подразделения")
 
     # Явные роли: начальник отдела, руководитель департамента и т.д.
     for pattern, wanted_type, role_case, confidence in ROLE_UNIT_RULES:
         if re.search(pattern, title_key):
             unit, unit_type = _find_nearest_unit(units, wanted_type)
             if unit:
-                text = _join_explicit_role(title_gen, unit, unit_type, role_case)
-                effective_confidence = confidence if title_inflected else min(confidence, 0.75)
+                text = _join_explicit_role(title, unit, unit_type, role_case)
                 return PositionSuggestion(
                     text,
-                    effective_confidence,
-                    f"Мужской род, родительный падеж; должность связана с подразделением «{unit}»",
+                    confidence,
+                    f"Должность однозначно связана с подразделением «{unit}»",
                 )
 
     # "Заместитель руководителя" обычно относится к ближайшему подразделению.
@@ -374,7 +298,7 @@ def suggest_position(source_position: str) -> PositionSuggestion:
         unit, _ = _find_nearest_unit(units)
         if unit:
             return PositionSuggestion(
-                _clean(f"{title_gen} {unit_to_genitive(unit)}"),
+                _clean(f"{title} {unit_to_genitive(unit)}"),
                 0.90,
                 f"Использовано ближайшее подразделение «{unit}»",
             )
@@ -384,9 +308,9 @@ def suggest_position(source_position: str) -> PositionSuggestion:
         unit, _ = _find_nearest_unit(units)
         if unit:
             return PositionSuggestion(
-                _clean(f"{title_gen} {unit_to_genitive(unit)}"),
-                0.92 if title_inflected else 0.70,
-                f"Мужской род, родительный падеж; использовано ближайшее подразделение «{unit}»",
+                _clean(f"{title} {unit_to_genitive(unit)}"),
+                0.92,
+                f"Использовано ближайшее подразделение «{unit}»",
             )
 
     # Общий "руководитель" — предложение показать можно, но автоматически
@@ -395,9 +319,9 @@ def suggest_position(source_position: str) -> PositionSuggestion:
         unit, _ = _find_nearest_unit(units)
         if unit:
             return PositionSuggestion(
-                _clean(f"{title_gen} {unit_to_genitive(unit)}"),
+                _clean(f"{title} {unit_to_genitive(unit)}"),
                 0.72,
-                "Неоднозначная должность «Руководитель»; требуется проверка уровня",
+                "Неоднозначная должность «Руководитель»",
             )
 
     return PositionSuggestion("", 0.0, "Автоматическое правило пока не найдено")
