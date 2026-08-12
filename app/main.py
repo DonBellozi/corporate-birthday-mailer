@@ -4,7 +4,7 @@ from pathlib import Path
 import os, shutil, uuid
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, select
@@ -16,7 +16,7 @@ from .models import LocalUser, ImportRun, PositionMapping, IntroTemplate, MailLo
 from .security import hash_password, verify_password
 from .settings_service import ensure_defaults, get_all_settings, set_settings
 from .ad_auth import authenticate_ad
-from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday
+from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview
 from .mail_service import fetch_latest_xlsx
 from .rendering import validate_template
 from .scheduler import start_scheduler
@@ -287,6 +287,25 @@ def today_send(employee_id: int, request: Request, db: Session = Depends(get_db)
         raise HTTPException(404)
     send_birthday(db, emp, actor=actor)
     return RedirectResponse("/today", 303)
+
+
+
+@app.get("/preview/{employee_id}")
+def preview_birthday(employee_id: int, request: Request, db: Session = Depends(get_db)):
+    require_user(request)
+
+    emp = db.get(EmployeeSnapshot, employee_id)
+    if not emp:
+        raise HTTPException(404, "Сотрудник не найден")
+
+    try:
+        data = build_birthday_preview(db, emp)
+        return JSONResponse(data)
+    except ValueError as exc:
+        return JSONResponse(
+            {"error": str(exc)},
+            status_code=400,
+        )
 
 @app.get("/logs", response_class=HTMLResponse)
 def logs_page(request: Request, db: Session = Depends(get_db)):

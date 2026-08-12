@@ -158,8 +158,91 @@ def get_position(db, source_position):
     suggestion = suggest_position(source_position)
     return suggestion.text if suggestion.auto_use else ""
 
-def send_birthday(db, emp, actor="scheduler"):
+def compose_birthday_message(db, emp):
+    """
+    Собирает письмо без отправки и без изменения счетчиков использования.
+
+    Эту же функцию используют предпросмотр и реальная отправка, чтобы
+    оператор видел тот же результат, который формирует почтовая логика.
+    """
     cfg = get_all_settings(db)
+
+    intro = choose_intro(db)
+    if not intro:
+        raise ValueError("Нет активного текста поздравления")
+
+    position = (
+        get_position(db, emp.source_position)
+        if cfg.get("positions_enabled") == "true"
+        else ""
+    )
+
+    ctx = variable_context({
+        "fio": emp.fio,
+        "birthday_day": emp.birthday_day,
+        "birthday_month": emp.birthday_month,
+        "gender": emp.gender,
+    }, position)
+
+    intro_text = render_text(intro.body, ctx)
+
+    wish = None
+    wish_text = ""
+    if cfg.get("wishes_enabled") == "true":
+        wish = choose_wish(db, emp.gender)
+        if wish:
+            wish_text = render_text(wish.body, ctx)
+
+    recipient = cfg.get("mail_recipient", "").strip()
+    subject = cfg.get("mail_subject", "Поздравляем с Днем рождения!").strip()
+
+    rendered = (
+        intro_text
+        + ("\n" + position if position else "")
+        + ("\n" + wish_text if wish_text else "")
+    )
+
+    html_body = email_html(
+        intro_text,
+        wish_text,
+        position,
+        emp.gender,
+    )
+
+    return {
+        "cfg": cfg,
+        "intro": intro,
+        "wish": wish,
+        "intro_text": intro_text,
+        "wish_text": wish_text,
+        "position": position,
+        "recipient": recipient,
+        "subject": subject,
+        "rendered": rendered,
+        "html": html_body,
+    }
+
+
+def build_birthday_preview(db, emp):
+    message = compose_birthday_message(db, emp)
+    return {
+        "fio": emp.fio,
+        "subject": message["subject"],
+        "recipient": message["recipient"],
+        "position": message["position"],
+        "intro_name": message["intro"].name if message["intro"] else "",
+        "wish_name": message["wish"].name if message["wish"] else "",
+        "html": message["html"],
+        "excluded": bool(emp.hide_birthday),
+        "warning": (
+            "Сотрудник исключен из поздравлений признаком «Скрыть день рождения»."
+            if emp.hide_birthday
+            else ""
+        ),
+    }
+
+
+def send_birthday(db, emp, actor="scheduler"):
     if emp.hide_birthday:
         return False, "Работник исключен из поздравлений"
 
@@ -172,26 +255,13 @@ def send_birthday(db, emp, actor="scheduler"):
     if old:
         return False, "Поздравление уже отправлено"
 
-    intro = choose_intro(db)
-    if not intro:
-        return False, "Нет активного вступительного шаблона"
+    try:
+        message = compose_birthday_message(db, emp)
+    except ValueError as exc:
+        return False, str(exc)
 
-    position = get_position(db, emp.source_position) if cfg.get("positions_enabled") == "true" else ""
-    ctx = variable_context({
-        "fio": emp.fio, "birthday_day": emp.birthday_day,
-        "birthday_month": emp.birthday_month, "gender": emp.gender,
-    }, position)
-    intro_text = render_text(intro.body, ctx)
-
-    wish = None
-    wish_text = ""
-    if cfg.get("wishes_enabled") == "true":
-        wish = choose_wish(db, emp.gender)
-        if wish:
-            wish_text = render_text(wish.body, ctx)
-
-    recipient = cfg.get("mail_recipient", "").strip()
-    subject = cfg.get("mail_subject", "Поздравляем с Днем рождения!").strip()
+    recipient = message["recipient"]
+    subject = message["subject"]
     if not recipient:
         return False, "Не настроена группа рассылки"
 
@@ -200,25 +270,44 @@ def send_birthday(db, emp, actor="scheduler"):
         MailLog.birthday_year == year,
     ))
     if not log:
-        log = MailLog(employee_key=emp.employee_key, fio=emp.fio,
-                      birthday_year=year, recipient=recipient, subject=subject)
+        log = MailLog(
+            employee_key=emp.employee_key,
+            fio=emp.fio,
+            birthday_year=year,
+            recipient=recipient,
+            subject=subject,
+        )
         db.add(log)
 
-    rendered = intro_text + ("\n" + position if position else "") + ("\n" + wish_text if wish_text else "")
-    log.rendered_text = rendered
+    log.rendered_text = message["rendered"]
     log.status = "sending"
     db.commit()
 
     try:
-        send_html_mail(cfg, subject, recipient, email_html(intro_text, wish_text, position, emp.gender), rendered)
+        send_html_mail(
+            message["cfg"],
+            subject,
+            recipient,
+            message["html"],
+            message["rendered"],
+        )
         log.status = "sent"
         log.sent_at = datetime.utcnow()
+
+        intro = message["intro"]
         intro.usage_count += 1
         intro.last_used_at = datetime.utcnow()
+
+        wish = message["wish"]
         if wish:
             wish.usage_count += 1
             wish.last_used_at = datetime.utcnow()
-        db.add(AuditLog(actor=actor, action="birthday_sent", details=emp.fio))
+
+        db.add(AuditLog(
+            actor=actor,
+            action="birthday_sent",
+            details=emp.fio,
+        ))
         db.commit()
         return True, "Отправлено"
     except Exception as exc:

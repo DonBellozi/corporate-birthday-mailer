@@ -27,6 +27,7 @@
   <th>ФИО</th>
   <th>Пол</th>
   <th>Запрет</th>
+  <th>Просмотр</th>
 </tr>
 {% for item in next_birthdays %}
 <tr>
@@ -47,6 +48,14 @@
       <span class="ok">Можно</span>
     {% endif %}
   </td>
+  <td>
+    <button
+      type="button"
+      class="preview-btn"
+      data-employee-id="{{ item.employee.id }}"
+      data-fio="{{ item.employee.fio|e }}"
+    >Просмотр</button>
+  </td>
 </tr>
 {% endfor %}
 </table>
@@ -54,5 +63,108 @@
 <p class="muted">В ближайшие 30 дней дней рождения нет.</p>
 {% endif %}
 </div>
+
+
+<div id="birthdayPreviewModal" class="modal" hidden>
+  <div class="modal-backdrop" data-preview-close></div>
+
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="birthdayPreviewTitle">
+    <div class="modal-header">
+      <div>
+        <h2 id="birthdayPreviewTitle">Предпросмотр поздравления</h2>
+        <div id="birthdayPreviewName" class="muted"></div>
+      </div>
+      <button type="button" class="modal-close" data-preview-close aria-label="Закрыть">×</button>
+    </div>
+
+    <div id="birthdayPreviewMeta" class="preview-meta">Загрузка...</div>
+    <div id="birthdayPreviewError" class="alert error" hidden></div>
+
+    <iframe
+      id="birthdayPreviewFrame"
+      class="preview-frame"
+      title="Предпросмотр письма"
+      sandbox=""
+    ></iframe>
+  </div>
+</div>
+
+<script>
+(() => {
+  const modal = document.getElementById("birthdayPreviewModal");
+  const frame = document.getElementById("birthdayPreviewFrame");
+  const meta = document.getElementById("birthdayPreviewMeta");
+  const error = document.getElementById("birthdayPreviewError");
+  const name = document.getElementById("birthdayPreviewName");
+
+  function closePreview() {
+    modal.hidden = true;
+    frame.srcdoc = "";
+    error.hidden = true;
+    error.textContent = "";
+    document.body.classList.remove("modal-open");
+  }
+
+  async function openPreview(button) {
+    const employeeId = button.dataset.employeeId;
+    name.textContent = button.dataset.fio || "";
+    meta.textContent = "Формируем письмо...";
+    error.hidden = true;
+    error.textContent = "";
+    frame.srcdoc = "";
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+
+    try {
+      const response = await fetch(`/preview/${employeeId}`, {
+        headers: {"Accept": "application/json"}
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Не удалось сформировать предпросмотр");
+      }
+
+      const info = [];
+      info.push(`Тема: ${data.subject || "не указана"}`);
+
+      if (data.position) {
+        info.push(`Должность: ${data.position}`);
+      } else {
+        info.push("Должность: не будет указана");
+      }
+
+      if (data.intro_name) {
+        info.push(`Текст: ${data.intro_name}`);
+      }
+
+      if (data.warning) {
+        info.push(`ВНИМАНИЕ: ${data.warning}`);
+      }
+
+      meta.textContent = info.join("\\n");
+      frame.srcdoc = data.html || "";
+    } catch (e) {
+      meta.textContent = "";
+      error.textContent = e.message || "Ошибка предпросмотра";
+      error.hidden = false;
+    }
+  }
+
+  document.querySelectorAll(".preview-btn").forEach((button) => {
+    button.addEventListener("click", () => openPreview(button));
+  });
+
+  document.querySelectorAll("[data-preview-close]").forEach((button) => {
+    button.addEventListener("click", closePreview);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.hidden) {
+      closePreview();
+    }
+  });
+})();
+</script>
 
 {% endblock %}
