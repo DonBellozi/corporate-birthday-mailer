@@ -109,7 +109,7 @@
 </p>
 <div id="ad-test-message" class="alert" style="display:none"></div>
 <button type="button" id="ad-test-button">
-  Проверить подключение к AD
+  Проверить и сохранить AD
 </button>
 </div>
 
@@ -194,6 +194,14 @@
       );
       message.className = response.ok ? "alert success" : "alert error";
       message.style.display = "block";
+
+      if (response.ok && data.saved) {
+        const password = form.querySelector('input[name="ad_bind_password"]');
+        if (password) {
+          password.value = "";
+          password.placeholder = "Пароль сохранен. Оставьте пустым, чтобы не менять";
+        }
+      }
     } catch (error) {
       message.textContent = "Ошибка запроса: " + error;
       message.className = "alert error";

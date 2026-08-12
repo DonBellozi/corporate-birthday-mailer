@@ -499,7 +499,7 @@ async def settings_test_ad(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    require_admin(request)
+    actor = require_admin(request)
 
     form = await request.form()
     saved_cfg = get_all_settings(db)
@@ -519,16 +519,50 @@ async def settings_test_ad(
     cfg["ad_enabled"] = "true" if "ad_enabled" in form else "false"
     cfg["ad_ssl"] = "true" if "ad_ssl" in form else "false"
 
-    # Если пароль введен в форме, проверяем именно его.
-    # Если поле пустое – используем уже сохраненный пароль.
+    # Если пароль введен в форме – проверяем именно его.
+    # Если поле пустое – используем сохраненный пароль.
     entered_password = str(form.get("ad_bind_password", "") or "")
     if entered_password:
         cfg["ad_bind_password"] = entered_password
 
     ok, message = test_ad_connection(cfg)
 
+    if ok:
+        # Успешно проверенные параметры AD сразу сохраняем.
+        # Поэтому поиск пользователей и следующая загрузка страницы
+        # используют ровно тот пароль, который только что прошел bind.
+        set_settings(db, {
+            "ad_enabled": cfg.get("ad_enabled", "false"),
+            "ad_server": cfg.get("ad_server", ""),
+            "ad_port": cfg.get("ad_port", "389"),
+            "ad_ssl": cfg.get("ad_ssl", "false"),
+            "ad_domain": cfg.get("ad_domain", ""),
+            "ad_base_dn": cfg.get("ad_base_dn", ""),
+            "ad_user_filter": cfg.get(
+                "ad_user_filter",
+                "(sAMAccountName={login})",
+            ),
+            "ad_bind_user": cfg.get("ad_bind_user", ""),
+            "ad_bind_password": cfg.get("ad_bind_password", ""),
+        })
+        db.add(AuditLog(
+            actor=actor,
+            action="ad_settings_verified_saved",
+            details=(
+                f"{cfg.get('ad_server', '')}:"
+                f"{cfg.get('ad_port', '389')}; "
+                f"{cfg.get('ad_bind_user', '')}"
+            ),
+        ))
+        db.commit()
+        message += " Настройки AD сохранены."
+
     return JSONResponse(
-        {"ok": ok, "message": message},
+        {
+            "ok": ok,
+            "message": message,
+            "saved": bool(ok),
+        },
         status_code=200 if ok else 400,
     )
 
