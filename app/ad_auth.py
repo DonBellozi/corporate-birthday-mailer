@@ -228,6 +228,10 @@ def _service_bind_candidates(cfg: dict[str, str]) -> list[tuple[str, str]]:
 def _connect_service_account(
     cfg: dict[str, str],
 ) -> tuple[Connection, str]:
+    """
+    Пробуем несколько форм имени. Bind выполняем вручную, чтобы при отказе
+    сохранить полный connection.result от контроллера домена.
+    """
     password = cfg.get("ad_bind_password", "")
     if not password:
         raise RuntimeError(
@@ -243,12 +247,13 @@ def _connect_service_account(
     errors = []
 
     for user, auth in candidates:
+        conn = None
         try:
             kwargs = {
                 "user": user,
                 "password": password,
-                "auto_bind": True,
-                "raise_exceptions": True,
+                "auto_bind": False,
+                "raise_exceptions": False,
             }
             if auth == "ntlm":
                 kwargs["authentication"] = NTLM
@@ -257,25 +262,47 @@ def _connect_service_account(
                 _server(cfg),
                 **kwargs,
             )
-            label = (
-                f"{user} · NTLM"
-                if auth == "ntlm"
-                else f"{user} · SIMPLE"
-            )
-            return conn, label
 
-        except LDAPInvalidCredentialsResult:
-            errors.append(f"{user} · {auth.upper()}: invalidCredentials")
-        except LDAPException as exc:
-            detail = str(exc).strip() or exc.__class__.__name__
-            errors.append(f"{user} · {auth.upper()}: {detail}")
+            if conn.bind():
+                label = (
+                    f"{user} · NTLM"
+                    if auth == "ntlm"
+                    else f"{user} · SIMPLE"
+                )
+                return conn, label
+
+            result = conn.result or {}
+            code = result.get("result", "")
+            description = result.get("description", "")
+            message = str(result.get("message", "") or "").strip()
+            dn = str(result.get("dn", "") or "").strip()
+
+            detail = f"result={code} {description}".strip()
+            if message:
+                detail += f"; message={message}"
+            if dn:
+                detail += f"; dn={dn}"
+
+            errors.append(
+                f"{user} · {auth.upper()}: {detail}"
+            )
+
         except Exception as exc:
             detail = str(exc).strip() or exc.__class__.__name__
-            errors.append(f"{user} · {auth.upper()}: {exc.__class__.__name__}: {detail}")
+            errors.append(
+                f"{user} · {auth.upper()}: "
+                f"{exc.__class__.__name__}: {detail}"
+            )
+        finally:
+            if conn is not None and not conn.bound:
+                try:
+                    conn.unbind()
+                except Exception:
+                    pass
 
     raise RuntimeError(
         "Не удалось выполнить bind служебной учетной записи. "
-        "Проверены варианты: " + "; ".join(errors)
+        "Ответы контроллера: " + " | ".join(errors)
     )
 
 
