@@ -206,6 +206,7 @@ def home(request: Request, db: Session = Depends(get_db)):
         active_snapshot=active_snapshot,
         snapshot_status=snapshot_status,
         snapshot_status_level=snapshot_status_level,
+        today_date=date.today(),
     )
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1065,18 +1066,10 @@ def template_delete(item_id: int, request: Request, db: Session = Depends(get_db
         db.commit()
     return RedirectResponse("/templates", 303)
 
-@app.get("/today", response_class=HTMLResponse)
-def today_page(request: Request, db: Session = Depends(get_db)):
+@app.get("/today")
+def today_page(request: Request):
     require_user(request)
-    rows = []
-    for emp in todays_employees(db):
-        can_send, send_reason = birthday_send_eligibility(db, emp)
-        rows.append({
-            "employee": emp,
-            "can_send": can_send,
-            "send_reason": send_reason,
-        })
-    return page(request, "today.html", rows=rows, date=date.today())
+    return RedirectResponse("/", 303)
 
 @app.post("/today/{employee_id}/send")
 def today_send(employee_id: int, request: Request, db: Session = Depends(get_db)):
@@ -1085,7 +1078,7 @@ def today_send(employee_id: int, request: Request, db: Session = Depends(get_db)
     if not emp:
         raise HTTPException(404)
     send_birthday(db, emp, actor=actor)
-    return RedirectResponse("/today", 303)
+    return RedirectResponse("/", 303)
 
 
 

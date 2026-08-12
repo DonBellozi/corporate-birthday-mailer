@@ -23,10 +23,25 @@
 <div class="card"><h3>Сегодня</h3><div class="big">{{ upcoming|length }}</div><div class="muted">дней рождения</div></div>
 <div class="card"><h3>Должности</h3><div class="big">{{ unconfirmed_count }}</div><div class="muted">требуют настройки</div></div>
 </div>
-<div class="card"><h2>Сегодняшние именинники</h2>
+<div class="card">
+  <div class="section-heading-row">
+    <div>
+      <h2>Сегодня · {{ today_date.strftime("%d.%m.%Y") }}</h2>
+      <div class="muted small">Главная страница обновляется автоматически раз в час.</div>
+    </div>
+  </div>
+
 {% if upcoming %}
 <table>
-<tr><th>ФИО</th><th>Пол</th><th>Рабочий email</th><th>Состояние</th><th>Отправка</th></tr>
+<tr>
+  <th>ФИО</th>
+  <th>Пол</th>
+  <th>Рабочий email</th>
+  <th>Состояние</th>
+  <th>Подразделение / должность 1С</th>
+  <th>Отправка</th>
+  <th></th>
+</tr>
 {% for row in upcoming %}
 {% set x = row.employee %}
 <tr>
@@ -34,17 +49,28 @@
   <td>{{ "Мужской" if x.gender == "male" else "Женский" if x.gender == "female" else "Не определен" }}</td>
   <td>{{ x.work_email or "Не указан" }}</td>
   <td>{{ x.employee_state or "Не указано" }}</td>
+  <td class="small">{{ x.source_position }}</td>
   <td>
     {% if row.can_send %}
       <span class="ok">Можно</span>
     {% else %}
       <span class="bad" title="{{ row.send_reason }}">Не поздравлять</span>
+      <div class="muted small">{{ row.send_reason }}</div>
+    {% endif %}
+  </td>
+  <td>
+    {% if row.can_send %}
+    <form method="post" action="/today/{{ x.id }}/send">
+      <button type="submit">Отправить сейчас</button>
+    </form>
     {% endif %}
   </td>
 </tr>
 {% endfor %}
 </table>
-{% else %}<p class="muted">Сегодня именинников нет.</p>{% endif %}
+{% else %}
+<p class="muted">В последней успешной выгрузке на сегодня дней рождения нет.</p>
+{% endif %}
 </div>
 
 <div class="card">
@@ -180,6 +206,42 @@
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !modal.hidden) {
       closePreview();
+    }
+  });
+})();
+</script>
+
+<script>
+(() => {
+  const ONE_HOUR = 60 * 60 * 1000;
+  const RETRY_DELAY = 5 * 60 * 1000;
+  const loadedAt = Date.now();
+
+  function previewIsOpen() {
+    const modal = document.getElementById("birthdayPreviewModal");
+    return modal && !modal.hidden;
+  }
+
+  function refreshWhenConvenient() {
+    const elapsed = Date.now() - loadedAt;
+    if (elapsed < ONE_HOUR) {
+      window.setTimeout(refreshWhenConvenient, ONE_HOUR - elapsed);
+      return;
+    }
+
+    if (document.hidden || previewIsOpen()) {
+      window.setTimeout(refreshWhenConvenient, RETRY_DELAY);
+      return;
+    }
+
+    window.location.reload();
+  }
+
+  window.setTimeout(refreshWhenConvenient, ONE_HOUR);
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && Date.now() - loadedAt >= ONE_HOUR && !previewIsOpen()) {
+      window.location.reload();
     }
   });
 })();
