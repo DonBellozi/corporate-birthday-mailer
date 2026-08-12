@@ -15,7 +15,7 @@ from .db import Base, engine, get_db, SessionLocal
 from .models import LocalUser, ADAuthorizedUser, ImportRun, PositionMapping, EmployeePositionChoice, IntroTemplate, Card, MailLog, AuditLog, EmployeeSnapshot
 from .security import hash_password, verify_password
 from .settings_service import ensure_defaults, get_all_settings, set_settings
-from .ad_auth import authenticate_ad, search_ad_users
+from .ad_auth import authenticate_ad, search_ad_users, test_ad_connection
 from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview, latest_successful_import, current_employee_states, blocked_employee_states, birthday_send_eligibility, compose_birthday_message, employee_position_conflicts
 from .mail_service import fetch_latest_xlsx, send_html_mail
 from .rendering import validate_template
@@ -434,6 +434,8 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
         test_message=None,
         test_error=None,
         test_recipient="",
+        ad_test_message=None,
+        ad_test_error=None,
     )
 
 @app.post("/settings", response_class=HTMLResponse)
@@ -487,6 +489,54 @@ async def settings_post(request: Request, db: Session = Depends(get_db)):
         test_message=None,
         test_error=None,
         test_recipient="",
+        ad_test_message=None,
+        ad_test_error=None,
+    )
+
+
+@app.post("/settings/test-ad", response_class=HTMLResponse)
+async def settings_test_ad(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    require_admin(request)
+
+    form = await request.form()
+    saved_cfg = get_all_settings(db)
+    cfg = dict(saved_cfg)
+
+    for key in [
+        "ad_server",
+        "ad_port",
+        "ad_domain",
+        "ad_base_dn",
+        "ad_user_filter",
+        "ad_bind_user",
+    ]:
+        if key in form:
+            cfg[key] = str(form.get(key, "")).strip()
+
+    cfg["ad_enabled"] = "true" if "ad_enabled" in form else "false"
+    cfg["ad_ssl"] = "true" if "ad_ssl" in form else "false"
+
+    entered_password = str(form.get("ad_bind_password", "") or "")
+    if entered_password:
+        cfg["ad_bind_password"] = entered_password
+
+    ok, message = test_ad_connection(cfg)
+
+    return page(
+        request,
+        "settings.html",
+        cfg=cfg,
+        saved=False,
+        employee_states=current_employee_states(db),
+        blocked_states=blocked_employee_states(cfg),
+        test_message=None,
+        test_error=None,
+        test_recipient="",
+        ad_test_message=message if ok else None,
+        ad_test_error=None if ok else message,
     )
 
 
@@ -511,6 +561,8 @@ def settings_test_mail(
             test_message=None,
             test_error="Укажите корректный адрес для тестовой отправки.",
             test_recipient=recipient,
+            ad_test_message=None,
+            ad_test_error=None,
         )
 
     # Для теста берем реальное поздравление одного из сотрудников,
@@ -557,6 +609,8 @@ def settings_test_mail(
                 "работник, не исключенный из поздравлений."
             ),
             test_recipient=recipient,
+            ad_test_message=None,
+            ad_test_error=None,
         )
 
     try:
@@ -600,6 +654,8 @@ def settings_test_mail(
             ),
             test_error=None,
             test_recipient=recipient,
+            ad_test_message=None,
+            ad_test_error=None,
         )
     except Exception as exc:
         db.add(AuditLog(
@@ -619,6 +675,8 @@ def settings_test_mail(
             test_message=None,
             test_error=f"Не удалось отправить тестовое сообщение: {exc}",
             test_recipient=recipient,
+            ad_test_message=None,
+            ad_test_error=None,
         )
 
 

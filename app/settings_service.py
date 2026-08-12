@@ -39,7 +39,10 @@ DEFAULTS = {
     "smtp_host": "", "smtp_port": "587", "smtp_starttls": "true",
     "smtp_ssl": "false", "smtp_login": "", "smtp_password": "",
 
-    "ad_enabled": "false", "ad_server": "", "ad_port": "636", "ad_ssl": "true",
+    # Схема Active Directory аналогична invite-mailer:
+    # обычный LDAP/389 по умолчанию; LDAPS включается отдельно.
+    # ad_domain – именно NetBIOS-имя, например DOMAIN.
+    "ad_enabled": "false", "ad_server": "", "ad_port": "389", "ad_ssl": "false",
     "ad_domain": "", "ad_base_dn": "", "ad_user_filter": "(sAMAccountName={login})",
     "ad_bind_user": "", "ad_bind_password": "",
 
