@@ -229,8 +229,10 @@ def _connect_service_account(
     cfg: dict[str, str],
 ) -> tuple[Connection, str]:
     """
-    Пробуем несколько форм имени. Bind выполняем вручную, чтобы при отказе
-    сохранить полный connection.result от контроллера домена.
+    Служебная УЗ: ровно один bind в форме NETBIOS\\sAMAccountName.
+
+    Не перебираем варианты имени, чтобы не увеличивать badPwdCount
+    и не блокировать учетную запись политикой домена.
     """
     password = cfg.get("ad_bind_password", "")
     if not password:
@@ -238,71 +240,49 @@ def _connect_service_account(
             "Не указан пароль служебной учетной записи Active Directory"
         )
 
-    candidates = _service_bind_candidates(cfg)
-    if not candidates:
+    raw_login = cfg.get("ad_bind_user", "").strip()
+    if not raw_login:
         raise RuntimeError(
             "Не указана служебная учетная запись Active Directory"
         )
 
-    errors = []
+    short_login = _short_login(raw_login)
+    netbios = cfg.get("ad_domain", "").strip()
 
-    for user, auth in candidates:
-        conn = None
-        try:
-            kwargs = {
-                "user": user,
-                "password": password,
-                "auto_bind": False,
-                "raise_exceptions": False,
-            }
-            if auth == "ntlm":
-                kwargs["authentication"] = NTLM
+    if not netbios:
+        raise RuntimeError(
+            "Не указан домен NetBIOS Active Directory"
+        )
 
-            conn = Connection(
-                _server(cfg),
-                **kwargs,
-            )
+    bind_user = f"{netbios}\\{short_login}"
 
-            if conn.bind():
-                label = (
-                    f"{user} · NTLM"
-                    if auth == "ntlm"
-                    else f"{user} · SIMPLE"
-                )
-                return conn, label
+    conn = Connection(
+        _server(cfg),
+        user=bind_user,
+        password=password,
+        auto_bind=False,
+        raise_exceptions=False,
+    )
 
-            result = conn.result or {}
-            code = result.get("result", "")
-            description = result.get("description", "")
-            message = str(result.get("message", "") or "").strip()
-            dn = str(result.get("dn", "") or "").strip()
+    if conn.bind():
+        return conn, f"{bind_user} · SIMPLE"
 
-            detail = f"result={code} {description}".strip()
-            if message:
-                detail += f"; message={message}"
-            if dn:
-                detail += f"; dn={dn}"
+    result = conn.result or {}
+    code = result.get("result", "")
+    description = result.get("description", "")
+    message = str(result.get("message", "") or "").strip()
 
-            errors.append(
-                f"{user} · {auth.upper()}: {detail}"
-            )
+    try:
+        conn.unbind()
+    except Exception:
+        pass
 
-        except Exception as exc:
-            detail = str(exc).strip() or exc.__class__.__name__
-            errors.append(
-                f"{user} · {auth.upper()}: "
-                f"{exc.__class__.__name__}: {detail}"
-            )
-        finally:
-            if conn is not None and not conn.bound:
-                try:
-                    conn.unbind()
-                except Exception:
-                    pass
+    detail = f"result={code} {description}".strip()
+    if message:
+        detail += f"; message={message}"
 
     raise RuntimeError(
-        "Не удалось выполнить bind служебной учетной записи. "
-        "Ответы контроллера: " + " | ".join(errors)
+        f"Не удалось выполнить bind {bind_user}. {detail}"
     )
 
 
