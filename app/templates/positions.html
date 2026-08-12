@@ -12,9 +12,20 @@
 {% set s = row.suggestion %}
 <div class="card position-card">
 <form method="post" action="/positions/{{ x.id }}" class="position-form">
-  <div class="source">{{ x.source_position }}</div>
+  <div class="source position-tree">
+    {% if row.source_units %}
+      {% for unit in row.source_units %}
+        <div class="position-tree-level">
+          <span class="muted">{{ loop.index }}.</span> {{ unit }}
+        </div>
+      {% endfor %}
+    {% endif %}
+    {% if row.source_title %}
+      <div class="position-tree-title"><strong>Должность 1С:</strong> {{ row.source_title }}</div>
+    {% endif %}
+  </div>
 
-  <label>Для поздравления · мужской род, именительный падеж</label>
+  <label>Для поздравления · полное дерево, мужской род, именительный падеж</label>
   <input name="display_position"
          value="{{ row.input_value }}"
          placeholder="Не удалось определить автоматически">

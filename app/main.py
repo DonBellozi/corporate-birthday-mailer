@@ -17,10 +17,10 @@ from .security import hash_password, verify_password
 from .settings_service import ensure_defaults, get_all_settings, set_settings
 from .ad_auth import authenticate_ad
 from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview, latest_successful_import, current_employee_states, blocked_employee_states, birthday_send_eligibility
-from .mail_service import fetch_latest_xlsx
+from .mail_service import fetch_latest_xlsx, send_html_mail
 from .rendering import validate_template
 from .scheduler import start_scheduler
-from .position_suggester import suggest_position
+from .position_suggester import suggest_position, split_source_position
 from .card_service import save_uploaded_card, delete_card_file, card_file_path, card_meta
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -167,6 +167,9 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
         saved=False,
         employee_states=current_employee_states(db),
         blocked_states=blocked_employee_states(cfg),
+        test_message=None,
+        test_error=None,
+        test_recipient="",
     )
 
 @app.post("/settings", response_class=HTMLResponse)
@@ -217,7 +220,106 @@ async def settings_post(request: Request, db: Session = Depends(get_db)):
         saved=True,
         employee_states=current_employee_states(db),
         blocked_states=blocked_employee_states(cfg),
+        test_message=None,
+        test_error=None,
+        test_recipient="",
     )
+
+
+@app.post("/settings/test-mail", response_class=HTMLResponse)
+def settings_test_mail(
+    request: Request,
+    test_recipient: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    actor = require_user(request)
+    cfg = get_all_settings(db)
+    recipient = test_recipient.strip()
+
+    if not recipient or "@" not in recipient:
+        return page(
+            request,
+            "settings.html",
+            cfg=cfg,
+            saved=False,
+            employee_states=current_employee_states(db),
+            blocked_states=blocked_employee_states(cfg),
+            test_message=None,
+            test_error="Укажите корректный адрес для тестовой отправки.",
+            test_recipient=recipient,
+        )
+
+    subject = "Тестовое сообщение – Добрый день"
+    text_body = (
+        "Это тестовое сообщение системы «Добрый день».\n"
+        "Если вы получили это письмо, исходящая почта настроена корректно."
+    )
+    html_body = """<!doctype html>
+<html>
+<body style="margin:0;padding:24px;background:#f5f7f9;font-family:Arial,Helvetica,sans-serif;color:#24292f;">
+<table width="100%" cellspacing="0" cellpadding="0" border="0">
+<tr><td align="center">
+<table width="600" cellspacing="0" cellpadding="0" border="0"
+       style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e0e4e8;">
+<tr><td style="padding:26px 30px;">
+<div style="font-size:20px;font-weight:700;margin-bottom:16px;">Добрый день!</div>
+<div style="font-size:16px;line-height:1.6;">
+Это тестовое сообщение системы «Добрый день».<br><br>
+Если вы получили это письмо, исходящая почта настроена корректно.
+</div>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+    try:
+        send_html_mail(
+            cfg,
+            subject,
+            recipient,
+            html_body,
+            text_body,
+        )
+        db.add(AuditLog(
+            actor=actor,
+            action="test_mail_sent",
+            details=recipient,
+        ))
+        db.commit()
+
+        return page(
+            request,
+            "settings.html",
+            cfg=cfg,
+            saved=False,
+            employee_states=current_employee_states(db),
+            blocked_states=blocked_employee_states(cfg),
+            test_message=f"Тестовое сообщение отправлено на {recipient}.",
+            test_error=None,
+            test_recipient=recipient,
+        )
+    except Exception as exc:
+        db.add(AuditLog(
+            actor=actor,
+            action="test_mail_failed",
+            details=f"{recipient}: {exc}",
+        ))
+        db.commit()
+
+        return page(
+            request,
+            "settings.html",
+            cfg=cfg,
+            saved=False,
+            employee_states=current_employee_states(db),
+            blocked_states=blocked_employee_states(cfg),
+            test_message=None,
+            test_error=f"Не удалось отправить тестовое сообщение: {exc}",
+            test_recipient=recipient,
+        )
+
 
 @app.get("/imports", response_class=HTMLResponse)
 def imports_page(request: Request, db: Session = Depends(get_db)):
@@ -272,10 +374,13 @@ def positions_page(request: Request, db: Session = Depends(get_db)):
     rows = []
     for item in items:
         suggestion = suggest_position(item.source_position)
+        source_units, source_title = split_source_position(item.source_position)
         rows.append({
             "item": item,
             "suggestion": suggestion,
             "input_value": item.display_position if item.display_position else suggestion.text,
+            "source_units": source_units,
+            "source_title": source_title,
         })
 
     return page(request, "positions.html", rows=rows)

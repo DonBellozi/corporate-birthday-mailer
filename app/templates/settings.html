@@ -2,6 +2,8 @@
 {% block content %}
 <h1>Настройки</h1>
 {% if saved %}<div class="alert success">Настройки сохранены.</div>{% endif %}
+{% if test_message %}<div class="alert success">{{ test_message }}</div>{% endif %}
+{% if test_error %}<div class="alert error">{{ test_error }}</div>{% endif %}
 <form method="post">
 <div class="card"><h2>Рассылка</h2><div class="cols">
 <div><label>Группа рассылки</label><input name="mail_recipient" value="{{ cfg.mail_recipient }}"></div>
@@ -87,4 +89,31 @@
 </div></div>
 <button class="primary" type="submit">Сохранить</button>
 </form>
+
+<div class="card">
+<h2>Тестовая отправка</h2>
+<p class="muted">
+  Проверяет <strong>сохраненные</strong> настройки SMTP. Тест не использует шаблоны поздравлений,
+  открытки и не учитывается как отправленное поздравление.
+</p>
+<form method="post" action="/settings/test-mail">
+  <div class="rowline">
+    <div style="flex:1">
+      <label>Адрес для теста</label>
+      <input
+        type="email"
+        name="test_recipient"
+        value="{{ test_recipient or '' }}"
+        placeholder="user@domain.ru"
+        required
+      >
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button type="submit">Отправить тест</button>
+    </div>
+  </div>
+</form>
+</div>
+
 {% endblock %}

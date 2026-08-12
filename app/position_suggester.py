@@ -57,7 +57,31 @@ UNIT_TYPES = {
         "genitive": "службы",
         "instrumental": "службой",
     },
+    "филиал": {
+        "genitive": "филиала",
+        "instrumental": "филиалом",
+    },
+    "представительство": {
+        "genitive": "представительства",
+        "instrumental": "представительством",
+    },
 }
+
+
+def deduplicate_units(units: list[str]) -> list[str]:
+    """Убирает одинаковые уровни дерева и технический корень."""
+    result = []
+    seen = set()
+    for unit in units:
+        unit = _clean(unit)
+        key = _key(unit)
+        if not unit or not key or key == "центральный аппарат":
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(unit)
+    return result
 
 
 def split_source_position(source_position: str):
@@ -80,9 +104,7 @@ def split_source_position(source_position: str):
 
     units = [_clean(x) for x in path.split(" / ") if _clean(x)]
     title = _clean(title)
-
-    # Технический верхний уровень в поздравлении сам по себе не нужен.
-    units = [x for x in units if _key(x) != "центральный аппарат"]
+    units = deduplicate_units(units)
     return units, title
 
 
@@ -107,6 +129,9 @@ def _inflect_adjective_token(token: str) -> str:
     lower = token.lower()
 
     endings = [
+        ("ский", "ского"),
+        ("цкий", "цкого"),
+        ("кий", "кого"),
         ("ый", "ого"),
         ("ой", "ого"),
         ("ий", "его"),
@@ -183,6 +208,31 @@ def _find_nearest_unit(units: list[str], wanted_type: str | None = None):
         if wanted_type is None or unit_type == wanted_type:
             return unit, unit_type
     return None, None
+
+
+def _unit_to_context_genitive(unit_name: str) -> str:
+    return unit_to_genitive(unit_name) if detect_unit_type(unit_name) else _clean(unit_name)
+
+
+def _parent_chain(units: list[str], before_index: int | None = None) -> str:
+    source = units if before_index is None else units[:before_index]
+    parts = [_unit_to_context_genitive(x) for x in reversed(source) if _clean(x)]
+    return _clean(" ".join(parts))
+
+
+def _full_unit_chain(units: list[str]) -> str:
+    return _parent_chain(units)
+
+
+def _find_nearest_unit_with_index(units: list[str], wanted_type: str | None = None):
+    for i in range(len(units) - 1, -1, -1):
+        unit = units[i]
+        unit_type = detect_unit_type(unit)
+        if not unit_type:
+            continue
+        if wanted_type is None or unit_type == wanted_type:
+            return i, unit, unit_type
+    return None, None, None
 
 
 # Должности, которые сами по себе уже достаточно информативны.
@@ -273,55 +323,72 @@ def suggest_position(source_position: str) -> PositionSuggestion:
         )
         title_key = _key(title)
 
-    # Уже самодостаточная должность.
+    if title_key == "директор":
+        chain = _full_unit_chain(units)
+        if chain:
+            return PositionSuggestion(
+                _clean(f"{title} {chain}"),
+                0.98,
+                "Использовано полное дерево подразделений",
+            )
+        return PositionSuggestion(title, 0.98, "Должность самодостаточна")
+
     if any(title_key.startswith(prefix) for prefix in SELF_CONTAINED_PREFIXES):
         return PositionSuggestion(title, 0.98, "Должность самодостаточна")
 
-    # Не угадываем спорные роли.
     if any(title_key.startswith(prefix) for prefix in AMBIGUOUS_TITLES):
-        return PositionSuggestion(title, 0.35, "Должность определена, но нужен выбор уровня подразделения")
+        return PositionSuggestion(
+            title,
+            0.35,
+            "Должность определена, но нужен выбор уровня подразделения",
+        )
 
-    # Явные роли: начальник отдела, руководитель департамента и т.д.
     for pattern, wanted_type, role_case, confidence in ROLE_UNIT_RULES:
         if re.search(pattern, title_key):
-            unit, unit_type = _find_nearest_unit(units, wanted_type)
-            if unit:
-                text = _join_explicit_role(title, unit, unit_type, role_case)
+            unit_index, unit, unit_type = _find_nearest_unit_with_index(
+                units, wanted_type
+            )
+            if unit is not None:
+                result = _join_explicit_role(title, unit, unit_type, role_case)
+                parents = _parent_chain(units, before_index=unit_index)
+                if parents:
+                    result = _clean(f"{result} {parents}")
                 return PositionSuggestion(
-                    text,
+                    result,
                     confidence,
-                    f"Должность однозначно связана с подразделением «{unit}»",
+                    "Использовано полное дерево подразделений",
                 )
 
-    # "Заместитель руководителя" обычно относится к ближайшему подразделению.
     if title_key.startswith("заместитель руководителя"):
-        unit, _ = _find_nearest_unit(units)
-        if unit:
+        unit_index, unit, _ = _find_nearest_unit_with_index(units)
+        if unit is not None:
+            result = _clean(f"{title} {_unit_to_context_genitive(unit)}")
+            parents = _parent_chain(units, before_index=unit_index)
+            if parents:
+                result = _clean(f"{result} {parents}")
             return PositionSuggestion(
-                _clean(f"{title} {unit_to_genitive(unit)}"),
+                result,
                 0.90,
-                f"Использовано ближайшее подразделение «{unit}»",
+                "Использовано полное дерево подразделений",
             )
 
-    # Специалисты / инженеры / эксперты: добавляем ближайшее рабочее подразделение.
     if any(title_key.startswith(prefix) for prefix in GENERAL_ATTACH_PREFIXES):
-        unit, _ = _find_nearest_unit(units)
-        if unit:
+        chain = _full_unit_chain(units)
+        if chain:
             return PositionSuggestion(
-                _clean(f"{title} {unit_to_genitive(unit)}"),
+                _clean(f"{title} {chain}"),
                 0.92,
-                f"Использовано ближайшее подразделение «{unit}»",
+                "Использовано полное дерево подразделений",
             )
 
-    # Общий "руководитель" — предложение показать можно, но автоматически
-    # использовать пока не будем.
     if title_key == "руководитель":
-        unit, _ = _find_nearest_unit(units)
-        if unit:
+        chain = _full_unit_chain(units)
+        if chain:
             return PositionSuggestion(
-                _clean(f"{title} {unit_to_genitive(unit)}"),
+                _clean(f"{title} {chain}"),
                 0.72,
-                "Неоднозначная должность «Руководитель»",
+                "Неоднозначная должность «Руководитель»; показано полное дерево",
             )
 
     return PositionSuggestion("", 0.0, "Автоматическое правило пока не найдено")
+
