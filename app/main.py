@@ -20,6 +20,7 @@ from .services import import_xlsx, todays_employees, upcoming_birthdays, send_bi
 from .mail_service import fetch_latest_xlsx
 from .rendering import validate_template
 from .scheduler import start_scheduler
+from .position_suggester import suggest_position
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -85,9 +86,13 @@ def home(request: Request, db: Session = Depends(get_db)):
     latest = db.scalars(select(ImportRun).order_by(desc(ImportRun.received_at))).first()
     today_birthdays = todays_employees(db)
     next_birthdays = upcoming_birthdays(db, days=30)
-    unconfirmed_count = len(list(db.scalars(
+    unconfirmed_items = list(db.scalars(
         select(PositionMapping).where(PositionMapping.confirmed == False)
-    ).all()))
+    ).all())
+    unconfirmed_count = sum(
+        1 for item in unconfirmed_items
+        if not suggest_position(item.source_position).auto_use
+    )
     return page(
         request,
         "index.html",
@@ -194,8 +199,20 @@ def imports_fetch(request: Request, db: Session = Depends(get_db)):
 @app.get("/positions", response_class=HTMLResponse)
 def positions_page(request: Request, db: Session = Depends(get_db)):
     require_user(request)
-    items = list(db.scalars(select(PositionMapping).order_by(PositionMapping.confirmed, PositionMapping.source_position)).all())
-    return page(request, "positions.html", items=items)
+    items = list(db.scalars(
+        select(PositionMapping).order_by(PositionMapping.confirmed, PositionMapping.source_position)
+    ).all())
+
+    rows = []
+    for item in items:
+        suggestion = suggest_position(item.source_position)
+        rows.append({
+            "item": item,
+            "suggestion": suggestion,
+            "input_value": item.display_position if item.display_position else suggestion.text,
+        })
+
+    return page(request, "positions.html", rows=rows)
 
 @app.post("/positions/{item_id}")
 async def positions_save(item_id: int, request: Request, db: Session = Depends(get_db)):

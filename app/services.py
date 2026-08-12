@@ -9,6 +9,7 @@ from .settings_service import get_all_settings
 from .xlsx_parser import parse_workbook
 from .rendering import variable_context, render_text, email_html
 from .mail_service import send_html_mail
+from .position_suggester import suggest_position
 
 def latest_successful_import(db):
     return db.scalars(
@@ -135,14 +136,27 @@ def choose_wish(db, gender):
     ).all()))
 
 def get_position(db, source_position):
+    """
+    Приоритет:
+      1. подтвержденная оператором должность;
+      2. автоматическое предложение с высокой уверенностью;
+      3. иначе должность не вставляется.
+    """
     if not source_position:
         return ""
+
     item = db.scalar(select(PositionMapping).where(
         PositionMapping.source_position == source_position,
-        PositionMapping.active == True,
-        PositionMapping.confirmed == True,
     ))
-    return item.display_position.strip() if item else ""
+
+    if item and not item.active:
+        return ""
+
+    if item and item.confirmed and item.display_position.strip():
+        return item.display_position.strip()
+
+    suggestion = suggest_position(source_position)
+    return suggestion.text if suggestion.auto_use else ""
 
 def send_birthday(db, emp, actor="scheduler"):
     cfg = get_all_settings(db)
