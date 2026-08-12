@@ -9,13 +9,24 @@
 <body>
 <header>
 <div><div class="brand">Добрый день</div><div class="subtitle">Corporate Birthday Mailer</div></div>
-{% if user %}<div class="user">{{ user }} · <a href="/logout">Выйти</a></div>{% endif %}
+{% if user and role %}
+<div class="user">
+  {{ display_name or user }}
+  · {{ "Администратор" if role == "admin" else "Оператор" }}
+  · <a href="/logout">Выйти</a>
+</div>
+{% endif %}
 </header>
-{% if user %}
+{% if user and role %}
 <nav>
-<a href="/">Главная</a><a href="/today">Сегодня</a><a href="/imports">XLSX</a>
-<a href="/positions">Должности</a><a href="/templates">Тексты поздравлений</a><a href="/cards">Фотобанк</a>
-<a href="/settings">Настройки</a><a href="/logs">Журнал</a>
+<a href="/">Главная</a>
+<a href="/today">Сегодня</a>
+{% if role == "admin" %}<a href="/imports">XLSX</a>{% endif %}
+<a href="/positions">Должности</a>
+<a href="/templates">Тексты поздравлений</a>
+<a href="/cards">Фотобанк</a>
+{% if role == "admin" %}<a href="/settings">Настройки</a>{% endif %}
+<a href="/logs">Журнал</a>
 </nav>
 {% endif %}
 <main>{% block content %}{% endblock %}</main>

@@ -87,16 +87,38 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 def user_name(request):
     return request.session.get("user")
 
+
+def user_role(request):
+    role = request.session.get("role")
+    return role if role in {"admin", "operator"} else None
+
+
+def user_display_name(request):
+    return request.session.get("display_name") or user_name(request)
+
+
 def require_user(request):
     user = user_name(request)
-    if not user:
+    role = user_role(request)
+    if not user or not role:
         raise HTTPException(401, "Требуется вход")
     return user
+
+
+def require_admin(request):
+    user = require_user(request)
+    if user_role(request) != "admin":
+        raise HTTPException(403, "Доступ только для администратора")
+    return user
+
 
 def page(request, template, **context):
     context.update({
         "request": request,
         "user": user_name(request),
+        "display_name": user_display_name(request),
+        "role": user_role(request),
+        "is_admin": user_role(request) == "admin",
     })
     return templates.TemplateResponse(
         request=request,
@@ -110,7 +132,8 @@ def health():
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, db: Session = Depends(get_db)):
-    if not user_name(request):
+    if not user_name(request) or not user_role(request):
+        request.session.clear()
         return RedirectResponse("/login", 303)
     latest = db.scalars(select(ImportRun).order_by(desc(ImportRun.received_at))).first()
     active_snapshot = latest_successful_import(db)
@@ -160,17 +183,27 @@ def login_page(request: Request):
 def login_post(request: Request, login: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     local = db.scalar(select(LocalUser).where(LocalUser.login == login, LocalUser.active == True))
     if local and verify_password(password, local.password_hash):
+        request.session.clear()
         request.session["user"] = login
+        request.session["display_name"] = login
         request.session["auth_type"] = "local"
+        request.session["role"] = "admin" if local.is_admin else "operator"
         return RedirectResponse("/", 303)
 
-    ok, _ = authenticate_ad(login, password, get_all_settings(db))
+    ok, result = authenticate_ad(login, password, get_all_settings(db))
     if ok:
-        request.session["user"] = login
+        request.session.clear()
+        request.session["user"] = result["login"]
+        request.session["display_name"] = result.get("display_name") or result["login"]
         request.session["auth_type"] = "ad"
+        request.session["role"] = result["role"]
         return RedirectResponse("/", 303)
 
-    return page(request, "login.html", error="Неверный логин/пароль или нет доступа через AD.")
+    return page(
+        request,
+        "login.html",
+        error="Неверный логин/пароль или нет доступа к системе.",
+    )
 
 @app.get("/logout")
 def logout(request: Request):
@@ -179,7 +212,7 @@ def logout(request: Request):
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, db: Session = Depends(get_db)):
-    require_user(request)
+    require_admin(request)
     cfg = get_all_settings(db)
     return page(
         request,
@@ -195,7 +228,7 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/settings", response_class=HTMLResponse)
 async def settings_post(request: Request, db: Session = Depends(get_db)):
-    actor = require_user(request)
+    actor = require_admin(request)
     form = await request.form()
     data = {k: str(v) for k, v in form.items()}
 
@@ -253,7 +286,7 @@ def settings_test_mail(
     test_recipient: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    actor = require_user(request)
+    actor = require_admin(request)
     cfg = get_all_settings(db)
     recipient = test_recipient.strip()
 
@@ -381,13 +414,13 @@ def settings_test_mail(
 
 @app.get("/imports", response_class=HTMLResponse)
 def imports_page(request: Request, db: Session = Depends(get_db)):
-    require_user(request)
+    require_admin(request)
     items = list(db.scalars(select(ImportRun).order_by(desc(ImportRun.received_at)).limit(50)).all())
     return page(request, "imports.html", items=items, message=None)
 
 @app.post("/imports/upload", response_class=HTMLResponse)
 async def imports_upload(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    actor = require_user(request)
+    actor = require_admin(request)
     if not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(400, "Нужен .xlsx")
     directory = Path("/app/data/imports")
@@ -407,7 +440,7 @@ async def imports_upload(request: Request, file: UploadFile = File(...), db: Ses
 
 @app.post("/imports/fetch-mail", response_class=HTMLResponse)
 def imports_fetch(request: Request, db: Session = Depends(get_db)):
-    actor = require_user(request)
+    actor = require_admin(request)
     try:
         path = fetch_latest_xlsx(get_all_settings(db), Path("/app/data/imports"))
         if not path:

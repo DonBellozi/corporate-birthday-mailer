@@ -41,7 +41,13 @@ DEFAULTS = {
 
     "ad_enabled": "false", "ad_server": "", "ad_port": "636", "ad_ssl": "true",
     "ad_domain": "", "ad_base_dn": "", "ad_user_filter": "(sAMAccountName={login})",
-    "ad_allowed_group_dn": "", "ad_bind_user": "", "ad_bind_password": "",
+    # Новая ролевая модель AD.
+    "ad_admin_group_dn": "",
+    "ad_operator_group_dn": "",
+    # Старое поле сохраняем для обратной совместимости. Если новые группы
+    # не настроены, оно трактуется как группа администраторов.
+    "ad_allowed_group_dn": "",
+    "ad_bind_user": "", "ad_bind_password": "",
 
     "xlsx_header_row": "2", "xlsx_second_header_row": "3", "xlsx_data_row": "4",
     "xlsx_fio_column": "Сотрудник.Физическое лицо.ФИО",
