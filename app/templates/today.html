@@ -3,8 +3,8 @@
 <h1>Сегодня · {{ date.strftime("%d.%m.%Y") }}</h1>
 <div class="card">
 {% if items %}
-<table><tr><th>ФИО</th><th>Пол</th><th>Должность 1С</th><th>Запрет</th><th></th></tr>
-{% for x in items %}<tr><td>{{ x.fio }}</td><td>{{ x.gender }}</td><td class="small">{{ x.source_position }}</td>
+<table><tr><th>ФИО</th><th>Пол</th><th>Подразделение / должность 1С</th><th>Запрет</th><th></th></tr>
+{% for x in items %}<tr><td>{{ x.fio }}</td><td>{{ "Мужской" if x.gender == "male" else "Женский" if x.gender == "female" else "Не определен" }}</td><td class="small">{{ x.source_position }}</td>
 <td>{% if x.hide_birthday %}<span class="bad">Не поздравлять</span>{% else %}<span class="ok">Можно</span>{% endif %}</td>
 <td>{% if not x.hide_birthday %}<form method="post" action="/today/{{ x.id }}/send"><button type="submit">Отправить сейчас</button></form>{% endif %}</td></tr>{% endfor %}
 </table>

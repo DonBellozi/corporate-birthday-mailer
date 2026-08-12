@@ -142,6 +142,55 @@ def detect_header_rows(ws, configured_top=2, configured_second=3):
         "во 2-й строке и подзаголовки в 3-й."
     )
 
+def update_department_stack(stack: list[str], level: int, name: str) -> list[str]:
+    """
+    Обновляет текущий путь подразделений по Excel outlineLevel.
+
+    В выгрузке 1С строки подразделений находятся в колонке A и объединены
+    по ширине отчета. Уровень группировки строки задает место подразделения
+    в иерархии.
+    """
+    name = normalize_text(name)
+    if not name:
+        return stack
+
+    level = max(0, int(level or 0))
+
+    # Оставляем только родителей текущего уровня.
+    stack = stack[:level]
+
+    # В отчете встречаются технические повторы одного подразделения
+    # на соседних уровнях. Не добавляем одинаковое имя второй раз подряд.
+    if stack and normalize_key(stack[-1]) == normalize_key(name):
+        return stack
+
+    stack.append(name)
+    return stack
+
+
+def build_position_with_departments(department_stack: list[str], position: str) -> str:
+    """
+    Формирует полное исходное представление для справочника должностей:
+      Центральный Аппарат / Департамент ... / Отдел ...  Должность
+    """
+    parts = []
+    for item in department_stack:
+        item = normalize_text(item)
+        if not item:
+            continue
+        # На всякий случай дополнительно убираем последовательные дубли.
+        if parts and normalize_key(parts[-1]) == normalize_key(item):
+            continue
+        parts.append(item)
+
+    path = " / ".join(parts)
+    position = normalize_text(position)
+
+    if path and position:
+        return f"{path}  {position}"
+    return path or position
+
+
 def find_col(headers, expected: str, required=True, aliases=None):
     aliases = aliases or []
     names = [expected, *aliases]
@@ -228,10 +277,24 @@ def parse_workbook(path: str | Path, cfg: dict[str, str]):
     )
 
     result = []
+    department_stack: list[str] = []
+
     for row in range(data_row, ws.max_row + 1):
         fio = normalize_text(ws.cell(row, fio_col).value)
+
+        # Строка без ФИО, но со значением в первой колонке — это строка
+        # подразделения. В ней колонка A объединена по ширине отчета.
+        # outlineLevel определяет глубину подразделения.
         if not fio:
+            department_name = normalize_text(ws.cell(row, 1).value)
+            if department_name:
+                department_stack = update_department_stack(
+                    department_stack,
+                    ws.row_dimensions[row].outlineLevel,
+                    department_name,
+                )
             continue
+
         raw_birthday = ws.cell(row, birthday_col).value
         try:
             birthday = parse_birthday(raw_birthday)
@@ -242,6 +305,8 @@ def parse_workbook(path: str | Path, cfg: dict[str, str]):
             continue
 
         position = normalize_text(ws.cell(row, position_col).value) if position_col else ""
+        source_position = build_position_with_departments(department_stack, position)
+
         hidden = normalize_key(ws.cell(row, hide_col).value) == "да" if hide_col else False
         explicit_gender = normalize_text(ws.cell(row, gender_col).value) if gender_col else ""
         gender = detect_gender(fio, explicit_gender)
@@ -256,7 +321,7 @@ def parse_workbook(path: str | Path, cfg: dict[str, str]):
             "birthday_month": birthday[1],
             "gender": gender,
             "hide_birthday": hidden,
-            "source_position": position,
+            "source_position": source_position,
             "error": None,
         })
     return result
