@@ -13,3 +13,4 @@ openpyxl>=3.1,<4
 apscheduler>=3.10,<4
 email-validator>=2.2,<3
 Pillow>=11,<13
+pycryptodome>=3.20,<4

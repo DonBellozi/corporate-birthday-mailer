@@ -267,9 +267,11 @@ def _connect_service_account(
         except LDAPInvalidCredentialsResult:
             errors.append(f"{user} · {auth.upper()}: invalidCredentials")
         except LDAPException as exc:
-            errors.append(f"{user} · {auth.upper()}: {exc.__class__.__name__}")
+            detail = str(exc).strip() or exc.__class__.__name__
+            errors.append(f"{user} · {auth.upper()}: {detail}")
         except Exception as exc:
-            errors.append(f"{user} · {auth.upper()}: {exc.__class__.__name__}")
+            detail = str(exc).strip() or exc.__class__.__name__
+            errors.append(f"{user} · {auth.upper()}: {exc.__class__.__name__}: {detail}")
 
     raise RuntimeError(
         "Не удалось выполнить bind служебной учетной записи. "
