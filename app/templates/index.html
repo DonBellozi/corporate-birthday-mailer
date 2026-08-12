@@ -56,7 +56,6 @@
   <th>Через</th>
   <th>ФИО</th>
   <th>Пол</th>
-  <th>Рабочий email</th>
   <th>Состояние</th>
   <th>Отправка</th>
   <th>Просмотр</th>
@@ -73,7 +72,6 @@
   </td>
   <td>{{ item.employee.fio }}</td>
   <td>{{ "Мужской" if item.employee.gender == "male" else "Женский" if item.employee.gender == "female" else "Не определен" }}</td>
-  <td>{{ item.employee.work_email or "Не указан" }}</td>
   <td>{{ item.employee.employee_state or "Не указано" }}</td>
   <td>
     {% if item.can_send %}
