@@ -168,10 +168,10 @@ def display_width(meta: dict) -> int:
     width = int(meta.get("width") or 0)
     orientation = meta.get("orientation")
     limit = {
-        "horizontal": 560,
-        "square": 480,
-        "vertical": 380,
-    }.get(orientation, 520)
+        "horizontal": 840,
+        "square": 720,
+        "vertical": 570,
+    }.get(orientation, 780)
 
     if width <= 0:
         return limit

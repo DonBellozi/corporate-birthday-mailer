@@ -78,16 +78,16 @@ def email_html(
     wish_block = ""
     if wish_text:
         wish_block = (
-            f'<tr><td style="padding:0 34px 24px 34px;font-size:16px;line-height:1.6;'
+            f'<tr><td style="padding:0 38px 28px 38px;font-size:24px;line-height:1.6;'
             f'color:{text_color};">{html.escape(wish_text)}</td></tr>'
         )
 
     card_block = ""
     if card_src:
         safe_src = html.escape(card_src, quote=True)
-        width = int(card_width or 520)
+        width = int(card_width or 780)
         card_block = (
-            '<tr><td align="center" style="padding:2px 24px 28px 24px;">'
+            '<tr><td align="center" style="padding:6px 18px 34px 18px;">'
             f'<img src="{safe_src}" width="{width}" alt="Поздравительная открытка" '
             f'style="display:block;width:100%;max-width:{width}px;height:auto;border:0;outline:none;text-decoration:none;">'
             '</td></tr>'
@@ -97,10 +97,10 @@ def email_html(
 <html>
 <body style="margin:0;padding:0;background:{bg};font-family:Arial,Helvetica,sans-serif;">
 <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background:{bg};">
-<tr><td align="center" style="padding:28px 12px;">
-<table width="640" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:640px;background:#ffffff;">
-<tr><td style="padding:28px 34px 14px 34px;font-size:16px;line-height:1.6;color:{text_color};">Добрый день!</td></tr>
-<tr><td style="padding:4px 34px 20px 34px;font-size:18px;line-height:1.6;color:{text_color};">{html.escape(intro_text)}</td></tr>
+<tr><td align="center" style="padding:24px 12px;">
+<table width="960" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:960px;background:#ffffff;">
+<tr><td style="padding:32px 38px 16px 38px;font-size:24px;line-height:1.55;color:{text_color};">Добрый день!</td></tr>
+<tr><td style="padding:6px 38px 24px 38px;font-size:27px;line-height:1.55;color:{text_color};">{html.escape(intro_text)}</td></tr>
 {position_block}
 {wish_block}
 {card_block}
