@@ -30,6 +30,24 @@ def _short_login(login: str) -> str:
     return value.strip()
 
 
+def _bind_login(value: str, cfg: dict[str, str]) -> str:
+    """
+    Если в настройках введен только короткий логин служебной УЗ,
+    автоматически добавляем AD-домен: DOMAIN\\login.
+
+    Уже полные значения DOMAIN\\login и user@domain оставляем как есть.
+    """
+    value = (value or "").strip()
+    if not value:
+        return ""
+
+    if "\\" in value or "@" in value:
+        return value
+
+    domain = cfg.get("ad_domain", "").strip()
+    return f"{domain}\\{value}" if domain else value
+
+
 def _guid_text(value) -> str:
     if value is None:
         return ""
@@ -70,7 +88,7 @@ def _entry_identity(entry) -> dict:
 
 
 def _search_connection(cfg: dict[str, str]):
-    bind_user = cfg.get("ad_bind_user", "").strip()
+    bind_user = _bind_login(cfg.get("ad_bind_user", ""), cfg)
     bind_password = cfg.get("ad_bind_password", "")
 
     if not bind_user:
@@ -182,7 +200,7 @@ def authenticate_ad(
 
     try:
         server = _server(cfg)
-        bind_user = cfg.get("ad_bind_user", "").strip()
+        bind_user = _bind_login(cfg.get("ad_bind_user", ""), cfg)
         bind_password = cfg.get("ad_bind_password", "")
 
         if bind_user:
