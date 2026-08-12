@@ -16,7 +16,7 @@ from .models import LocalUser, ImportRun, PositionMapping, IntroTemplate, Card, 
 from .security import hash_password, verify_password
 from .settings_service import ensure_defaults, get_all_settings, set_settings
 from .ad_auth import authenticate_ad
-from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview, latest_successful_import, current_employee_states, blocked_employee_states, birthday_send_eligibility
+from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview, latest_successful_import, current_employee_states, blocked_employee_states, birthday_send_eligibility, compose_birthday_message
 from .mail_service import fetch_latest_xlsx, send_html_mail
 from .rendering import validate_template
 from .scheduler import start_scheduler
@@ -266,43 +266,77 @@ def settings_test_mail(
             test_recipient=recipient,
         )
 
-    subject = "Тестовое сообщение – Добрый день"
-    text_body = (
-        "Это тестовое сообщение системы «Добрый день».\n"
-        "Если вы получили это письмо, исходящая почта настроена корректно."
-    )
-    html_body = """<!doctype html>
-<html>
-<body style="margin:0;padding:24px;background:#f5f7f9;font-family:Arial,Helvetica,sans-serif;color:#24292f;">
-<table width="100%" cellspacing="0" cellpadding="0" border="0">
-<tr><td align="center">
-<table width="600" cellspacing="0" cellpadding="0" border="0"
-       style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e0e4e8;">
-<tr><td style="padding:26px 30px;">
-<div style="font-size:20px;font-weight:700;margin-bottom:16px;">Добрый день!</div>
-<div style="font-size:16px;line-height:1.6;">
-Это тестовое сообщение системы «Добрый день».<br><br>
-Если вы получили это письмо, исходящая почта настроена корректно.
-</div>
-</td></tr>
-</table>
-</td></tr>
-</table>
-</body>
-</html>"""
+    # Для теста берем реальное поздравление одного из сотрудников,
+    # чтобы проверить итоговую сборку письма и открытки.
+    sample_emp = None
+
+    for emp in todays_employees(db):
+        can_send, _ = birthday_send_eligibility(db, emp)
+        if can_send:
+            sample_emp = emp
+            break
+
+    if sample_emp is None:
+        for item in upcoming_birthdays(db, days=365):
+            if item.get("can_send"):
+                sample_emp = item["employee"]
+                break
+
+    if sample_emp is None:
+        latest = latest_successful_import(db)
+        if latest:
+            for emp in db.scalars(
+                select(EmployeeSnapshot)
+                .where(EmployeeSnapshot.import_id == latest.id)
+                .order_by(EmployeeSnapshot.fio)
+            ).all():
+                can_send, _ = birthday_send_eligibility(db, emp)
+                if can_send:
+                    sample_emp = emp
+                    break
+
+    if sample_emp is None:
+        return page(
+            request,
+            "settings.html",
+            cfg=cfg,
+            saved=False,
+            employee_states=current_employee_states(db),
+            blocked_states=blocked_employee_states(cfg),
+            test_message=None,
+            test_error=(
+                "Не найден ни один сотрудник, подходящий для тестовой отправки. "
+                "Проверьте, что импортирована кадровая выгрузка и есть хотя бы один "
+                "работник, не исключенный из поздравлений."
+            ),
+            test_recipient=recipient,
+        )
 
     try:
+        message = compose_birthday_message(db, sample_emp)
+
+        inline_image = None
+        card = message["card"]
+        if card and message["card_path"]:
+            inline_image = {
+                "path": str(message["card_path"]),
+                "mime": (message["card_info"] or {}).get("mime") or "image/jpeg",
+                "cid": message["card_cid"],
+                "filename": card.filename,
+            }
+
         send_html_mail(
             cfg,
-            subject,
+            message["subject"],
             recipient,
-            html_body,
-            text_body,
+            message["html"],
+            message["rendered"],
+            inline_image=inline_image,
         )
         db.add(AuditLog(
             actor=actor,
             action="test_mail_sent",
-            details=recipient,
+            details=f"{recipient}; sample={sample_emp.fio}",
         ))
         db.commit()
 
@@ -313,7 +347,10 @@ def settings_test_mail(
             saved=False,
             employee_states=current_employee_states(db),
             blocked_states=blocked_employee_states(cfg),
-            test_message=f"Тестовое сообщение отправлено на {recipient}.",
+            test_message=(
+                f"Тестовое сообщение отправлено на {recipient}. "
+                f"Использовано поздравление для: {sample_emp.fio}."
+            ),
             test_error=None,
             test_recipient=recipient,
         )
