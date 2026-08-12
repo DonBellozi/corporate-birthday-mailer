@@ -65,6 +65,48 @@ def todays_employees(db):
         ).order_by(EmployeeSnapshot.fio)
     ).all())
 
+
+def upcoming_birthdays(db, days=30):
+    """
+    Возвращает дни рождения после сегодняшней даты на следующие `days` дней.
+    Работает по дню/месяцу, поэтому корректно проходит через границу года.
+    Сегодняшние именинники сюда не попадают.
+    """
+    latest = latest_successful_import(db)
+    if not latest:
+        return []
+
+    from datetime import timedelta
+
+    today = date.today()
+    employees = list(db.scalars(
+        select(EmployeeSnapshot).where(
+            EmployeeSnapshot.import_id == latest.id,
+        )
+    ).all())
+
+    date_map = {}
+    for offset in range(1, days + 1):
+        target = today + timedelta(days=offset)
+        date_map[(target.day, target.month)] = (target, offset)
+
+    result = []
+    for emp in employees:
+        key = (emp.birthday_day, emp.birthday_month)
+        match = date_map.get(key)
+        if not match:
+            continue
+
+        next_date, days_left = match
+        result.append({
+            "employee": emp,
+            "next_date": next_date,
+            "days_left": days_left,
+        })
+
+    result.sort(key=lambda item: (item["next_date"], item["employee"].fio))
+    return result
+
 def choose_least_used(items):
     if not items:
         return None

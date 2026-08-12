@@ -16,4 +16,43 @@
 </table>
 {% else %}<p class="muted">Сегодня именинников нет.</p>{% endif %}
 </div>
+
+<div class="card">
+<h2>Ближайшие дни рождения · 30 дней</h2>
+{% if next_birthdays %}
+<table>
+<tr>
+  <th>Дата</th>
+  <th>Через</th>
+  <th>ФИО</th>
+  <th>Пол</th>
+  <th>Запрет</th>
+</tr>
+{% for item in next_birthdays %}
+<tr>
+  <td>{{ item.next_date.strftime("%d.%m.%Y") }}</td>
+  <td>
+    {% if item.days_left == 1 %}
+      завтра
+    {% else %}
+      {{ item.days_left }} дн.
+    {% endif %}
+  </td>
+  <td>{{ item.employee.fio }}</td>
+  <td>{{ item.employee.gender }}</td>
+  <td>
+    {% if item.employee.hide_birthday %}
+      <span class="bad">Не поздравлять</span>
+    {% else %}
+      <span class="ok">Можно</span>
+    {% endif %}
+  </td>
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p class="muted">В ближайшие 30 дней дней рождения нет.</p>
+{% endif %}
+</div>
+
 {% endblock %}

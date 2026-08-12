@@ -16,7 +16,7 @@ from .models import LocalUser, ImportRun, PositionMapping, IntroTemplate, MailLo
 from .security import hash_password, verify_password
 from .settings_service import ensure_defaults, get_all_settings, set_settings
 from .ad_auth import authenticate_ad
-from .services import import_xlsx, todays_employees, send_birthday
+from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday
 from .mail_service import fetch_latest_xlsx
 from .rendering import validate_template
 from .scheduler import start_scheduler
@@ -83,11 +83,19 @@ def home(request: Request, db: Session = Depends(get_db)):
     if not user_name(request):
         return RedirectResponse("/login", 303)
     latest = db.scalars(select(ImportRun).order_by(desc(ImportRun.received_at))).first()
-    upcoming = todays_employees(db)
+    today_birthdays = todays_employees(db)
+    next_birthdays = upcoming_birthdays(db, days=30)
     unconfirmed_count = len(list(db.scalars(
         select(PositionMapping).where(PositionMapping.confirmed == False)
     ).all()))
-    return page(request, "index.html", latest=latest, upcoming=upcoming, unconfirmed_count=unconfirmed_count)
+    return page(
+        request,
+        "index.html",
+        latest=latest,
+        upcoming=today_birthdays,
+        next_birthdays=next_birthdays,
+        unconfirmed_count=unconfirmed_count,
+    )
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
