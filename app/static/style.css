@@ -7,7 +7,11 @@ main{max-width:1250px;margin:26px auto;padding:0 20px 50px}h1{font-size:26px;mar
 .card{background:#fff;border:1px solid #e0e4e8;border-radius:8px;padding:20px;margin-bottom:18px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
 .narrow{max-width:430px;margin:70px auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}.grid .card{margin-bottom:0}
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px 18px}
-label{display:block;font-size:13px;font-weight:600;margin:10px 0 6px}input,textarea{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;font:inherit;background:#fff}
+label{display:block;font-size:13px;font-weight:600;margin:10px 0 6px}
+/* Радио и чекбоксы исключены: иначе они растягиваются на всю ширину и во
+   flex/grid-раскладке делят место с текстом, ломая выравнивание. */
+input:not([type=checkbox]):not([type=radio]),textarea{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;font:inherit;background:#fff}
+input[type=checkbox],input[type=radio]{flex:none;width:auto;margin:0}
 textarea{resize:vertical}button{border:0;border-radius:5px;padding:9px 14px;background:#315b86;color:white;cursor:pointer;font-weight:600;margin-top:10px}.danger{background:#a33737}.primary{font-size:15px;padding:11px 20px}
 .check{font-weight:400;display:inline-flex;align-items:center;margin-right:18px;gap:7px}.check input{width:auto}
 table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid #e6e9ec;vertical-align:top}th{background:#f8f9fa}
@@ -80,14 +84,6 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
 .position-options .check{margin-top:4px;margin-bottom:4px}
 .position-congratulate-warning{font-size:12px;margin:2px 0 4px 0}
 
-.multi-position-summary{border-left:4px solid #d99a19}
-.multi-position-person:first-of-type{border-top:0}
-.multi-position-person-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-bottom:7px}
-.multi-position-options{display:grid;gap:4px;margin-bottom:8px}
-.multi-position-option{display:flex;align-items:flex-start;gap:8px;padding:6px 8px;border-radius:5px;cursor:pointer}
-.multi-position-option:hover{background:#f6f7f9}
-.multi-position-option input{margin-top:3px}
-.multi-position-path{display:block;margin-top:2px}
 
 .ad-user-search{display:flex;gap:8px;align-items:flex-end;margin:10px 0 14px 0}
 .ad-user-search input{flex:1}
@@ -151,40 +147,6 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
   }
 }
 .state-filter-card{border-left:4px solid #315b86}
-
-
-.multi-position-person{
-  padding:10px 0 14px 0;
-  border-top:1px solid #e2e6ea;
-  overflow:hidden;
-}
-.multi-position-person-summary{
-  list-style:none;
-  cursor:pointer;
-  user-select:none;
-}
-.multi-position-person-summary::-webkit-details-marker{
-  display:none;
-}
-.multi-position-person-summary::before{
-  content:"▸";
-  display:inline-block;
-  margin-right:8px;
-  transition:transform .15s ease;
-}
-.multi-position-person[open] > .multi-position-person-summary::before{
-  transform:rotate(90deg);
-}
-.multi-position-person[open] > .multi-position-person-summary{
-  border-bottom:1px solid #e5e8eb;
-}
-.multi-position-person-body{
-  padding-top:12px;
-}
-.multi-position-summary-action{
-  margin-left:auto;
-  white-space:nowrap;
-}
 
 
 /* ---- Страница "Должности": компактный список вместо стены карточек ---- */
@@ -270,4 +232,105 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
   .position-row{grid-template-columns:1fr;gap:10px}
   .position-toolbar{position:static}
   .position-search{max-width:none}
+}
+
+
+/* ---- Работники с несколькими должностями ---- */
+
+.multi-position-summary{border-left:4px solid #d99a19}
+.multi-position-summary > .multi-position-person-summary{
+  font-size:19px;
+  margin-bottom:4px;
+}
+
+.multi-position-person{
+  border-top:1px solid #e6e9ec;
+  padding:4px 0;
+}
+.multi-position-person:first-of-type{border-top:0}
+
+.multi-position-person-summary{
+  list-style:none;
+  cursor:pointer;
+  user-select:none;
+  border-radius:6px;
+  padding:9px 10px;
+}
+.multi-position-person-summary:hover{background:#f6f7f9}
+.multi-position-person-summary::-webkit-details-marker{display:none}
+.multi-position-person-summary::before{
+  content:"▸";
+  display:inline-block;
+  width:14px;
+  color:#8a949e;
+  transition:transform .15s ease;
+}
+.multi-position-person[open] > .multi-position-person-summary::before{
+  transform:rotate(90deg);
+}
+
+/* Шапка работника: имя слева, подсказка о действии прижата вправо. */
+.multi-position-person-head{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px 14px;
+  align-items:baseline;
+}
+.multi-position-summary-action{
+  margin-left:auto;
+  white-space:nowrap;
+}
+
+.multi-position-person-body{
+  padding:4px 10px 12px 24px;
+}
+
+/* Варианты - выбираемые карточки. На широком экране в две колонки:
+   у части работников по 4 должности, в один столбец это длинно. */
+.multi-position-options{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+  gap:8px;
+  margin-bottom:12px;
+}
+.multi-position-option{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  gap:10px;
+  align-items:start;
+  margin:0;
+  padding:11px 13px;
+  font-weight:400;
+  border:1px solid #dfe3e8;
+  border-radius:7px;
+  background:#fff;
+  cursor:pointer;
+  transition:border-color .12s ease,background .12s ease;
+}
+.multi-position-option:hover{border-color:#b8c2cc;background:#fafbfc}
+.multi-position-option input{margin-top:2px}
+/* Выбранный вариант подсвечивается целиком, а не только точкой в кружке. */
+.multi-position-option:has(input:checked){
+  border-color:#315b86;
+  background:#f2f7fc;
+  box-shadow:inset 0 0 0 1px #315b86;
+}
+.multi-position-option > span{min-width:0}
+.multi-position-option strong{
+  display:block;
+  line-height:1.35;
+  overflow-wrap:anywhere;
+}
+.multi-position-path{
+  display:block;
+  margin-top:3px;
+  line-height:1.4;
+  overflow-wrap:anywhere;
+}
+.employee-position-choice-status:empty{display:none}
+.employee-position-choice-save{margin-top:0}
+
+@media(max-width:700px){
+  .multi-position-person-body{padding-left:10px}
+  .multi-position-options{grid-template-columns:1fr}
 }
