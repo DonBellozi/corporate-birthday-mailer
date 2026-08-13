@@ -3,17 +3,44 @@
 <h1>Должности</h1>
 <p class="muted">
   Система автоматически формирует должность в мужском роде и именительном падеже из кадровой должности и структуры подразделений.
-  Варианты с высокой уверенностью могут использоваться без ручного подтверждения.
-  Ручное подтверждение всегда имеет приоритет.
+  Должности влияют только на текст поздравления. Единственный кадровый фильтр самой отправки – состояние работника.
 </p>
+
+{% if state_saved %}
+<div class="alert success">Состояния работников сохранены.</div>
+{% endif %}
+
+<div class="card state-filter-card">
+  <h2>Состояния работников</h2>
+  <p class="muted">
+    Это единственный фильтр отправки поздравлений. Галочка означает, что работников
+    с таким состоянием поздравляем. Изменять список могут оператор и администратор.
+    Новое состояние из 1С по умолчанию считается разрешенным.
+  </p>
+  <form method="post" action="/positions/states">
+    <div class="state-selector">
+    {% for state in employee_states %}
+      <input type="hidden" name="employee_state_known" value="{{ state }}">
+      <label class="check state-check">
+        <input type="checkbox"
+               name="employee_state_allowed"
+               value="{{ state }}"
+               {% if state not in blocked_states %}checked{% endif %}>
+        {{ state }}
+      </label>
+    {% endfor %}
+    </div>
+    <button type="submit">Сохранить состояния</button>
+  </form>
+</div>
 
 {% if multi_position_rows %}
 <div class="card multi-position-summary">
   <h2>Работники с несколькими должностями</h2>
   <p class="muted">
     Один и тот же работник найден в текущей выгрузке по нескольким должностям.
-    Выберите, какую из них использовать для поздравления. До выбора автоматическая
-    отправка этому работнику не выполняется.
+    Выберите, какую из них использовать в тексте поздравления.
+    На возможность отправки поздравления этот выбор больше не влияет.
   </p>
 
   {% for person in multi_position_rows %}
@@ -44,9 +71,6 @@
                  required>
           <span>
             <strong>{{ option.display_position or option.source_title }}</strong>
-            {% if not option.congratulate %}
-              <span class="bad"> · эта должность исключена из поздравлений</span>
-            {% endif %}
             {% if option.source_units %}
             <span class="muted small multi-position-path">
               {{ option.source_units|join(" / ") }}
@@ -106,22 +130,9 @@
 
   <div class="position-options">
     <label class="check">
-      <input type="checkbox"
-             name="congratulate"
-             class="position-congratulate"
-             {% if x.congratulate %}checked{% endif %}>
-      Поздравлять сотрудников с этой должностью
-    </label>
-
-    <label class="check">
       <input type="checkbox" name="active" {% if x.active %}checked{% endif %}>
       Использовать должность в тексте
     </label>
-  </div>
-
-  <div class="position-congratulate-warning bad"
-       {% if x.congratulate %}hidden{% endif %}>
-    Сотрудники с этой полной связкой подразделения и должности не будут поздравляться.
   </div>
 
   <button type="submit" class="position-save">{{ "Сохранить" if x.confirmed else "Подтвердить / изменить" }}</button>
@@ -136,15 +147,6 @@
 <script>
 (() => {
   document.querySelectorAll(".position-form").forEach((form) => {
-    const congratulate = form.querySelector(".position-congratulate");
-    const warning = form.closest(".position-card").querySelector(".position-congratulate-warning");
-
-    if (congratulate && warning) {
-      congratulate.addEventListener("change", () => {
-        warning.hidden = congratulate.checked;
-      });
-    }
-
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
 

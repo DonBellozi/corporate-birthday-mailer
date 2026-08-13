@@ -293,32 +293,21 @@ def resolved_latest_employees(db) -> list[EmployeeSnapshot]:
     return result
 
 
-def birthday_send_eligibility(db, emp) -> tuple[bool, str]:
-    if emp.hide_birthday:
-        return False, "В 1С установлен запрет «Скрыть день рождения»"
+def birthday_send_eligibility(
+    db,
+    emp,
+    cfg: dict[str, str] | None = None,
+) -> tuple[bool, str]:
+    """
+    Единственный кадровый фильтр поздравления – состояние работника.
+    Остальные кадровые признаки не блокируют отправку.
+    """
+    if cfg is None:
+        cfg = get_all_settings(db)
 
-    position_ok, position_reason = employee_position_conflict_status(db, emp)
-    if not position_ok:
-        return False, position_reason
-
-    cfg = get_all_settings(db)
     if not employee_state_is_allowed(emp, cfg):
         state = getattr(emp, "employee_state", "") or "Не указано"
         return False, f"Состояние «{state}» исключено из поздравлений"
-
-    email_ok, email_reason = work_email_status(emp, cfg)
-    if not email_ok:
-        return False, email_reason
-
-    # Запрет по должности привязан к полному source_position:
-    # вся иерархия подразделений + должность 1С.
-    source_position = getattr(emp, "source_position", "") or ""
-    if source_position:
-        mapping = db.scalar(select(PositionMapping).where(
-            PositionMapping.source_position == source_position,
-        ))
-        if mapping and not mapping.congratulate:
-            return False, "Эта должность исключена из поздравлений"
 
     return True, ""
 
@@ -431,16 +420,19 @@ def import_xlsx(
         raise
 
 
-def todays_employees(db):
+def todays_employees(db, employees=None):
     today = date.today()
+    if employees is None:
+        employees = resolved_latest_employees(db)
+
     return [
-        emp for emp in resolved_latest_employees(db)
+        emp for emp in employees
         if emp.birthday_day == today.day
         and emp.birthday_month == today.month
     ]
 
 
-def upcoming_birthdays(db, days=30):
+def upcoming_birthdays(db, days=30, employees=None, cfg=None):
     """
     Возвращает дни рождения после сегодняшней даты на следующие `days` дней.
     Работает по дню/месяцу, поэтому корректно проходит через границу года.
@@ -453,7 +445,10 @@ def upcoming_birthdays(db, days=30):
     from datetime import timedelta
 
     today = date.today()
-    employees = resolved_latest_employees(db)
+    if employees is None:
+        employees = resolved_latest_employees(db)
+    if cfg is None:
+        cfg = get_all_settings(db)
 
     date_map = {}
     for offset in range(1, days + 1):
@@ -468,7 +463,7 @@ def upcoming_birthdays(db, days=30):
             continue
 
         next_date, days_left = match
-        can_send, send_reason = birthday_send_eligibility(db, emp)
+        can_send, send_reason = birthday_send_eligibility(db, emp, cfg=cfg)
         result.append({
             "employee": emp,
             "next_date": next_date,
@@ -652,6 +647,8 @@ def build_birthday_preview(db, emp):
             card_width=display_width(message["card_info"] or {}),
         )
 
+    can_send, warning = birthday_send_eligibility(db, emp)
+
     return {
         "fio": emp.fio,
         "subject": message["subject"],
@@ -665,8 +662,8 @@ def build_birthday_preview(db, emp):
             if card else ""
         ),
         "html": preview_html,
-        "excluded": not birthday_send_eligibility(db, emp)[0],
-        "warning": birthday_send_eligibility(db, emp)[1],
+        "excluded": not can_send,
+        "warning": warning,
     }
 
 

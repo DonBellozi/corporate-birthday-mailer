@@ -16,7 +16,7 @@ from .models import LocalUser, ADAuthorizedUser, ImportRun, PositionMapping, Emp
 from .security import hash_password, verify_password
 from .settings_service import ensure_defaults, get_all_settings, set_settings
 from .ad_auth import authenticate_ad, search_ad_users, test_ad_connection
-from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview, latest_successful_import, current_employee_states, blocked_employee_states, birthday_send_eligibility, compose_birthday_message, employee_position_conflicts
+from .services import import_xlsx, todays_employees, upcoming_birthdays, send_birthday, build_birthday_preview, latest_successful_import, current_employee_states, blocked_employee_states, birthday_send_eligibility, compose_birthday_message, employee_position_conflicts, resolved_latest_employees
 from .mail_service import fetch_latest_xlsx, send_html_mail
 from .rendering import validate_template
 from .scheduler import start_scheduler
@@ -168,23 +168,47 @@ def home(request: Request, db: Session = Depends(get_db)):
         require_user(request)
     except HTTPException:
         return RedirectResponse("/login", 303)
-    latest = db.scalars(select(ImportRun).order_by(desc(ImportRun.received_at))).first()
+
+    latest = db.scalars(
+        select(ImportRun).order_by(desc(ImportRun.received_at))
+    ).first()
     active_snapshot = latest_successful_import(db)
     cfg = get_all_settings(db)
-    snapshot_status = cfg.get("snapshot_status", "")
-    snapshot_status_level = cfg.get("snapshot_status_level", "info")
 
-    today_birthdays = todays_employees(db)
+    return page(
+        request,
+        "index.html",
+        latest=latest,
+        active_snapshot=active_snapshot,
+        snapshot_status=cfg.get("snapshot_status", ""),
+        snapshot_status_level=cfg.get("snapshot_status_level", "info"),
+        today_date=date.today(),
+    )
+
+
+@app.get("/dashboard-fragment", response_class=HTMLResponse)
+def dashboard_fragment(request: Request, db: Session = Depends(get_db)):
+    require_user(request)
+
+    employees = resolved_latest_employees(db)
+    cfg = get_all_settings(db)
+
     today_rows = []
-    for emp in today_birthdays:
-        can_send, send_reason = birthday_send_eligibility(db, emp)
+    for emp in todays_employees(db, employees=employees):
+        can_send, send_reason = birthday_send_eligibility(db, emp, cfg=cfg)
         today_rows.append({
             "employee": emp,
             "can_send": can_send,
             "send_reason": send_reason,
         })
 
-    next_birthdays = upcoming_birthdays(db, days=30)
+    next_birthdays = upcoming_birthdays(
+        db,
+        days=30,
+        employees=employees,
+        cfg=cfg,
+    )
+
     unconfirmed_items = list(db.scalars(
         select(PositionMapping).where(PositionMapping.confirmed == False)
     ).all())
@@ -196,17 +220,17 @@ def home(request: Request, db: Session = Depends(get_db)):
         1 for item in employee_position_conflicts(db)
         if not item["resolved"]
     )
-    return page(
-        request,
-        "index.html",
-        latest=latest,
-        upcoming=today_rows,
-        next_birthdays=next_birthdays,
-        unconfirmed_count=unconfirmed_count,
-        active_snapshot=active_snapshot,
-        snapshot_status=snapshot_status,
-        snapshot_status_level=snapshot_status_level,
-        today_date=date.today(),
+
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard_fragment.html",
+        context={
+            "request": request,
+            "today_date": date.today(),
+            "upcoming": today_rows,
+            "next_birthdays": next_birthdays,
+            "unconfirmed_count": unconfirmed_count,
+        },
     )
 
 @app.get("/login", response_class=HTMLResponse)
@@ -445,25 +469,6 @@ async def settings_post(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     data = {k: str(v) for k, v in form.items()}
 
-    # Селектор состояний: в форме передаем полный набор показанных
-    # состояний и отдельно те, которым разрешена отправка.
-    known_states = [
-        str(x).strip() for x in form.getlist("employee_state_known")
-        if str(x).strip()
-    ]
-    allowed_state_keys = {
-        " ".join(str(x).replace("\xa0", " ").split()).strip().lower().replace("ё", "е")
-        for x in form.getlist("employee_state_allowed")
-    }
-    blocked_states = [
-        state for state in known_states
-        if " ".join(state.replace("\xa0", " ").split()).strip().lower().replace("ё", "е")
-        not in allowed_state_keys
-    ]
-    data["employee_state_blocked"] = json.dumps(
-        blocked_states,
-        ensure_ascii=False,
-    )
 
     for checkbox in [
         "auto_send_enabled","wishes_enabled","cards_enabled","positions_enabled",
@@ -801,12 +806,62 @@ def positions_page(request: Request, db: Session = Depends(get_db)):
             "options": options,
         })
 
+    cfg = get_all_settings(db)
     return page(
         request,
         "positions.html",
         rows=rows,
         multi_position_rows=multi_position_rows,
+        employee_states=current_employee_states(db),
+        blocked_states=blocked_employee_states(cfg),
+        state_saved=request.query_params.get("state_saved") == "1",
     )
+
+
+@app.post("/positions/states")
+async def positions_states_save(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    actor = require_user(request)
+    form = await request.form()
+
+    known_states = [
+        str(x).strip()
+        for x in form.getlist("employee_state_known")
+        if str(x).strip()
+    ]
+    allowed_state_keys = {
+        " ".join(str(x).replace("\xa0", " ").split())
+        .strip().lower().replace("ё", "е")
+        for x in form.getlist("employee_state_allowed")
+    }
+
+    blocked_states = [
+        state
+        for state in known_states
+        if " ".join(state.replace("\xa0", " ").split())
+        .strip().lower().replace("ё", "е")
+        not in allowed_state_keys
+    ]
+
+    set_settings(db, {
+        "employee_state_blocked": json.dumps(
+            blocked_states,
+            ensure_ascii=False,
+        ),
+    })
+    db.add(AuditLog(
+        actor=actor,
+        action="employee_states_changed",
+        details=(
+            "Исключены из поздравлений: "
+            + (", ".join(blocked_states) if blocked_states else "нет")
+        ),
+    ))
+    db.commit()
+    return RedirectResponse("/positions?state_saved=1", 303)
+
 
 @app.post("/employee-position-choice")
 async def employee_position_choice_save(
@@ -861,14 +916,12 @@ async def positions_save(item_id: int, request: Request, db: Session = Depends(g
     item.display_position = str(form.get("display_position", "")).strip()
     item.confirmed = bool(item.display_position)
     item.active = "active" in form
-    item.congratulate = "congratulate" in form
     db.add(AuditLog(
         actor=actor,
         action="position_changed",
         details=(
             f"{item_id}: {item.display_position}; "
-            f"использовать должность={'да' if item.active else 'нет'}; "
-            f"поздравлять={'да' if item.congratulate else 'нет'}"
+            f"использовать должность={'да' if item.active else 'нет'}"
         ),
     ))
     db.commit()

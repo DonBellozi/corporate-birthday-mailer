@@ -18,48 +18,6 @@
 <label class="check"><input type="checkbox" name="cards_enabled" {% if cfg.cards_enabled=="true" %}checked{% endif %}> Использовать открытки</label>
 </div>
 
-<div class="card">
-<h2>Состояния работников</h2>
-<p class="muted">
-  Галочка означает, что сотруднику с таким состоянием можно отправлять поздравление.
-  Список дополняется автоматически из кадровой выгрузки 1С. Новое ранее неизвестное
-  состояние по умолчанию считается разрешенным, пока оператор его не отключит.
-</p>
-
-<div class="state-selector">
-{% for state in employee_states %}
-  <input type="hidden" name="employee_state_known" value="{{ state }}">
-  <label class="check state-check">
-    <input
-      type="checkbox"
-      name="employee_state_allowed"
-      value="{{ state }}"
-      {% if state not in blocked_states %}checked{% endif %}
-    >
-    {{ state }}
-  </label>
-{% endfor %}
-</div>
-</div>
-
-<div class="card">
-<h2>Рабочая почта</h2>
-<p class="muted">
-  Для поздравления у сотрудника должен быть заполнен корпоративный email из 1С.
-  Если список доменов заполнен, адрес также должен принадлежать одному из них.
-  Указывайте домены по одному на строку, без символа @.
-</p>
-<label>Разрешенные почтовые домены</label>
-<textarea
-  name="allowed_email_domains"
-  rows="4"
-  placeholder="company.ru&#10;company.com"
->{{ cfg.allowed_email_domains }}</textarea>
-<p class="muted small">
-  Пустой список не проверяет домен, но отсутствие рабочего email все равно запрещает поздравление.
-</p>
-</div>
-
 <div class="card"><h2>Входящая почта · IMAP</h2><div class="cols">
 <div><label>Сервер</label><input name="imap_host" value="{{ cfg.imap_host }}"></div>
 <div><label>Порт</label><input name="imap_port" value="{{ cfg.imap_port }}"></div>

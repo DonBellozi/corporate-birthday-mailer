@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .models import Setting
 from .security import encrypt_value, decrypt_value
@@ -66,16 +67,20 @@ LEGACY_XLSX_DEFAULTS = {
 
 
 def ensure_defaults(db: Session):
+    """Загружает таблицу настроек одним запросом."""
+    objects = list(db.scalars(select(Setting)).all())
+    by_key = {obj.key: obj for obj in objects}
     changed = False
+
     for key, value in DEFAULTS.items():
-        obj = db.get(Setting, key)
+        obj = by_key.get(key)
         if obj is None:
-            db.add(Setting(key=key, value=value, encrypted=False))
+            obj = Setting(key=key, value=value, encrypted=False)
+            db.add(obj)
+            by_key[key] = obj
             changed = True
             continue
 
-        # Одноразово обновляем старые значения первого MVP на реальные
-        # заголовки текущей выгрузки 1С. Пользовательские значения не трогаем.
         legacy = LEGACY_XLSX_DEFAULTS.get(key)
         if legacy and not obj.encrypted and obj.value == legacy[0]:
             obj.value = legacy[1]
@@ -84,15 +89,29 @@ def ensure_defaults(db: Session):
     if changed:
         db.commit()
 
+    return by_key
+
+
 def get_setting(db: Session, key: str, default: str = "") -> str:
     obj = db.get(Setting, key)
     if not obj:
         return default
     return decrypt_value(obj.value) if obj.encrypted else obj.value
 
+
 def get_all_settings(db: Session) -> dict[str, str]:
-    ensure_defaults(db)
-    return {key: get_setting(db, key, value) for key, value in DEFAULTS.items()}
+    by_key = ensure_defaults(db)
+    result = {}
+
+    for key, default in DEFAULTS.items():
+        obj = by_key.get(key)
+        if not obj:
+            result[key] = default
+            continue
+
+        result[key] = decrypt_value(obj.value) if obj.encrypted else obj.value
+
+    return result
 
 def set_settings(db: Session, data: dict[str, str]):
     for key, value in data.items():

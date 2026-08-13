@@ -1,0 +1,78 @@
+<div id="dashboard-meta"
+     data-today-count="{{ upcoming|length }}"
+     data-position-count="{{ unconfirmed_count }}"></div>
+
+<div class="card">
+  <h2>Сегодня · {{ today_date.strftime("%d.%m.%Y") }}</h2>
+  <div class="muted small">Данные обновляются автоматически раз в час.</div>
+
+{% if upcoming %}
+<table>
+<tr>
+  <th>ФИО</th><th>Пол</th><th>Состояние</th>
+  <th>Подразделение / должность 1С</th><th>Отправка</th><th></th>
+</tr>
+{% for row in upcoming %}
+{% set x = row.employee %}
+<tr>
+  <td>{{ x.fio }}</td>
+  <td>{{ "Мужской" if x.gender == "male" else "Женский" if x.gender == "female" else "Не определен" }}</td>
+  <td>{{ x.employee_state or "Не указано" }}</td>
+  <td class="small">{{ x.source_position }}</td>
+  <td>
+    {% if row.can_send %}
+      <span class="ok">Можно</span>
+    {% else %}
+      <span class="bad">Не поздравлять</span>
+      <div class="muted small">{{ row.send_reason }}</div>
+    {% endif %}
+  </td>
+  <td>
+    {% if row.can_send %}
+    <form method="post" action="/today/{{ x.id }}/send">
+      <button type="submit">Отправить сейчас</button>
+    </form>
+    {% endif %}
+  </td>
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p class="muted">В последней успешной выгрузке на сегодня дней рождения нет.</p>
+{% endif %}
+</div>
+
+<div class="card">
+<h2>Ближайшие дни рождения · 30 дней</h2>
+{% if next_birthdays %}
+<table>
+<tr>
+  <th>Дата</th><th>Через</th><th>ФИО</th><th>Пол</th>
+  <th>Состояние</th><th>Отправка</th><th>Просмотр</th>
+</tr>
+{% for item in next_birthdays %}
+<tr>
+  <td>{{ item.next_date.strftime("%d.%m.%Y") }}</td>
+  <td>{% if item.days_left == 1 %}завтра{% else %}{{ item.days_left }} дн.{% endif %}</td>
+  <td>{{ item.employee.fio }}</td>
+  <td>{{ "Мужской" if item.employee.gender == "male" else "Женский" if item.employee.gender == "female" else "Не определен" }}</td>
+  <td>{{ item.employee.employee_state or "Не указано" }}</td>
+  <td>
+    {% if item.can_send %}
+      <span class="ok">Можно</span>
+    {% else %}
+      <span class="bad" title="{{ item.send_reason }}">Не поздравлять</span>
+    {% endif %}
+  </td>
+  <td>
+    <button type="button" class="preview-btn"
+            data-employee-id="{{ item.employee.id }}"
+            data-fio="{{ item.employee.fio|e }}">Просмотр</button>
+  </td>
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p class="muted">В ближайшие 30 дней дней рождения нет.</p>
+{% endif %}
+</div>

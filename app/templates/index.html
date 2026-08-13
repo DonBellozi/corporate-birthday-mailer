@@ -16,116 +16,41 @@
 {% endif %}
 
 <div class="grid">
-<div class="card"><h3>Последний XLSX</h3>
-{% if latest %}<div class="big">{{ "Успешно" if latest.success else "Ошибка" }}</div>
-<div>{{ latest.received_at.strftime("%d.%m.%Y %H:%M") }}</div><div class="muted">{{ latest.rows_valid }} работников</div>
-{% else %}<div class="muted">Файл еще не импортирован</div>{% endif %}</div>
-<div class="card"><h3>Сегодня</h3><div class="big">{{ upcoming|length }}</div><div class="muted">дней рождения</div></div>
-<div class="card"><h3>Должности</h3><div class="big">{{ unconfirmed_count }}</div><div class="muted">требуют настройки</div></div>
-</div>
-<div class="card">
-  <div class="section-heading-row">
-    <div>
-      <h2>Сегодня · {{ today_date.strftime("%d.%m.%Y") }}</h2>
-      <div class="muted small">Главная страница обновляется автоматически раз в час.</div>
-    </div>
+  <div class="card">
+    <h3>Последний XLSX</h3>
+    {% if latest %}
+      <div class="big">{{ "Успешно" if latest.success else "Ошибка" }}</div>
+      <div>{{ latest.received_at.strftime("%d.%m.%Y %H:%M") }}</div>
+      <div class="muted">{{ latest.rows_valid }} работников</div>
+    {% else %}
+      <div class="muted">Файл еще не импортирован</div>
+    {% endif %}
   </div>
 
-{% if upcoming %}
-<table>
-<tr>
-  <th>ФИО</th>
-  <th>Пол</th>
-  <th>Рабочий email</th>
-  <th>Состояние</th>
-  <th>Подразделение / должность 1С</th>
-  <th>Отправка</th>
-  <th></th>
-</tr>
-{% for row in upcoming %}
-{% set x = row.employee %}
-<tr>
-  <td>{{ x.fio }}</td>
-  <td>{{ "Мужской" if x.gender == "male" else "Женский" if x.gender == "female" else "Не определен" }}</td>
-  <td>{{ x.work_email or "Не указан" }}</td>
-  <td>{{ x.employee_state or "Не указано" }}</td>
-  <td class="small">{{ x.source_position }}</td>
-  <td>
-    {% if row.can_send %}
-      <span class="ok">Можно</span>
-    {% else %}
-      <span class="bad" title="{{ row.send_reason }}">Не поздравлять</span>
-      <div class="muted small">{{ row.send_reason }}</div>
-    {% endif %}
-  </td>
-  <td>
-    {% if row.can_send %}
-    <form method="post" action="/today/{{ x.id }}/send">
-      <button type="submit">Отправить сейчас</button>
-    </form>
-    {% endif %}
-  </td>
-</tr>
-{% endfor %}
-</table>
-{% else %}
-<p class="muted">В последней успешной выгрузке на сегодня дней рождения нет.</p>
-{% endif %}
+  <div class="card">
+    <h3>Сегодня</h3>
+    <div class="big" id="dashboard-today-count">…</div>
+    <div class="muted" id="dashboard-today-note">загрузка</div>
+  </div>
+
+  <a href="/positions" class="dashboard-card-link">
+    <div class="card" id="positions-status-card">
+      <h3>Должности</h3>
+      <div class="big" id="dashboard-position-count">…</div>
+      <div class="muted">требуют настройки</div>
+    </div>
+  </a>
 </div>
 
-<div class="card">
-<h2>Ближайшие дни рождения · 30 дней</h2>
-{% if next_birthdays %}
-<table>
-<tr>
-  <th>Дата</th>
-  <th>Через</th>
-  <th>ФИО</th>
-  <th>Пол</th>
-  <th>Состояние</th>
-  <th>Отправка</th>
-  <th>Просмотр</th>
-</tr>
-{% for item in next_birthdays %}
-<tr>
-  <td>{{ item.next_date.strftime("%d.%m.%Y") }}</td>
-  <td>
-    {% if item.days_left == 1 %}
-      завтра
-    {% else %}
-      {{ item.days_left }} дн.
-    {% endif %}
-  </td>
-  <td>{{ item.employee.fio }}</td>
-  <td>{{ "Мужской" if item.employee.gender == "male" else "Женский" if item.employee.gender == "female" else "Не определен" }}</td>
-  <td>{{ item.employee.employee_state or "Не указано" }}</td>
-  <td>
-    {% if item.can_send %}
-      <span class="ok">Можно</span>
-    {% else %}
-      <span class="bad" title="{{ item.send_reason }}">Не поздравлять</span>
-    {% endif %}
-  </td>
-  <td>
-    <button
-      type="button"
-      class="preview-btn"
-      data-employee-id="{{ item.employee.id }}"
-      data-fio="{{ item.employee.fio|e }}"
-    >Просмотр</button>
-  </td>
-</tr>
-{% endfor %}
-</table>
-{% else %}
-<p class="muted">В ближайшие 30 дней дней рождения нет.</p>
-{% endif %}
+<div id="dashboard-content">
+  <div class="card dashboard-loading">
+    <strong>Загружаем данные по дням рождения…</strong>
+    <div class="muted small">Страница уже открыта, данные появятся фоном.</div>
+  </div>
 </div>
-
 
 <div id="birthdayPreviewModal" class="modal" hidden>
   <div class="modal-backdrop" data-preview-close></div>
-
   <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="birthdayPreviewTitle">
     <div class="modal-header">
       <div>
@@ -134,26 +59,35 @@
       </div>
       <button type="button" class="modal-close" data-preview-close aria-label="Закрыть">×</button>
     </div>
-
     <div id="birthdayPreviewMeta" class="preview-meta">Загрузка...</div>
     <div id="birthdayPreviewError" class="alert error" hidden></div>
-
-    <iframe
-      id="birthdayPreviewFrame"
-      class="preview-frame"
-      title="Предпросмотр письма"
-      sandbox="allow-same-origin"
-    ></iframe>
+    <iframe id="birthdayPreviewFrame" class="preview-frame"
+            title="Предпросмотр письма" sandbox="allow-same-origin"></iframe>
   </div>
 </div>
 
 <script>
 (() => {
+  const dashboard = document.getElementById("dashboard-content");
+  const todayCount = document.getElementById("dashboard-today-count");
+  const todayNote = document.getElementById("dashboard-today-note");
+  const positionCount = document.getElementById("dashboard-position-count");
+  const positionCard = document.getElementById("positions-status-card");
+
   const modal = document.getElementById("birthdayPreviewModal");
   const frame = document.getElementById("birthdayPreviewFrame");
   const meta = document.getElementById("birthdayPreviewMeta");
   const error = document.getElementById("birthdayPreviewError");
   const name = document.getElementById("birthdayPreviewName");
+
+  const ONE_HOUR = 60 * 60 * 1000;
+  const RETRY_DELAY = 5 * 60 * 1000;
+  let lastDashboardLoad = 0;
+  let loadingDashboard = false;
+
+  function previewIsOpen() {
+    return modal && !modal.hidden;
+  }
 
   function closePreview() {
     modal.hidden = true;
@@ -178,15 +112,10 @@
         headers: {"Accept": "application/json"}
       });
       const data = await response.json();
-
       if (!response.ok) {
         throw new Error(data.error || "Не удалось сформировать предпросмотр");
       }
-
-      const info = [];
-      info.push(`Тема: ${data.subject || "не указана"}`);
-
-      meta.textContent = info.join("\\n");
+      meta.textContent = `Тема: ${data.subject || "не указана"}`;
       frame.srcdoc = data.html || "";
     } catch (e) {
       meta.textContent = "";
@@ -195,56 +124,83 @@
     }
   }
 
-  document.querySelectorAll(".preview-btn").forEach((button) => {
-    button.addEventListener("click", () => openPreview(button));
-  });
+  function applyDashboardMeta() {
+    const info = document.getElementById("dashboard-meta");
+    if (!info) return;
 
-  document.querySelectorAll("[data-preview-close]").forEach((button) => {
-    button.addEventListener("click", closePreview);
+    const birthdays = Number(info.dataset.todayCount || 0);
+    const positions = Number(info.dataset.positionCount || 0);
+
+    todayCount.textContent = String(birthdays);
+    todayNote.textContent = "дней рождения";
+    positionCount.textContent = String(positions);
+    positionCard.classList.toggle("attention-pulse", positions > 0);
+  }
+
+  async function loadDashboard() {
+    if (loadingDashboard) return;
+    loadingDashboard = true;
+
+    try {
+      const response = await fetch("/dashboard-fragment", {
+        headers: {"Accept": "text/html"},
+        credentials: "same-origin",
+        cache: "no-store"
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      dashboard.innerHTML = await response.text();
+      applyDashboardMeta();
+      lastDashboardLoad = Date.now();
+    } catch (e) {
+      dashboard.innerHTML = `
+        <div class="card">
+          <div class="bad">Не удалось загрузить данные главной страницы.</div>
+          <button type="button" id="dashboard-retry">Повторить</button>
+        </div>`;
+      const retry = document.getElementById("dashboard-retry");
+      if (retry) retry.addEventListener("click", loadDashboard);
+    } finally {
+      loadingDashboard = false;
+    }
+  }
+
+  document.addEventListener("click", (event) => {
+    const previewButton = event.target.closest(".preview-btn");
+    if (previewButton) {
+      openPreview(previewButton);
+      return;
+    }
+    if (event.target.closest("[data-preview-close]")) closePreview();
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !modal.hidden) {
-      closePreview();
-    }
+    if (event.key === "Escape" && !modal.hidden) closePreview();
   });
-})();
-</script>
 
-<script>
-(() => {
-  const ONE_HOUR = 60 * 60 * 1000;
-  const RETRY_DELAY = 5 * 60 * 1000;
-  const loadedAt = Date.now();
-
-  function previewIsOpen() {
-    const modal = document.getElementById("birthdayPreviewModal");
-    return modal && !modal.hidden;
-  }
-
-  function refreshWhenConvenient() {
-    const elapsed = Date.now() - loadedAt;
-    if (elapsed < ONE_HOUR) {
-      window.setTimeout(refreshWhenConvenient, ONE_HOUR - elapsed);
-      return;
+  async function hourlyRefresh() {
+    if (
+      Date.now() - lastDashboardLoad >= ONE_HOUR &&
+      !document.hidden &&
+      !previewIsOpen()
+    ) {
+      await loadDashboard();
     }
-
-    if (document.hidden || previewIsOpen()) {
-      window.setTimeout(refreshWhenConvenient, RETRY_DELAY);
-      return;
-    }
-
-    window.location.reload();
+    window.setTimeout(hourlyRefresh, RETRY_DELAY);
   }
-
-  window.setTimeout(refreshWhenConvenient, ONE_HOUR);
 
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && Date.now() - loadedAt >= ONE_HOUR && !previewIsOpen()) {
-      window.location.reload();
+    if (
+      !document.hidden &&
+      Date.now() - lastDashboardLoad >= ONE_HOUR &&
+      !previewIsOpen()
+    ) {
+      loadDashboard();
     }
   });
+
+  loadDashboard();
+  window.setTimeout(hourlyRefresh, RETRY_DELAY);
 })();
 </script>
-
 {% endblock %}
