@@ -132,18 +132,16 @@
   </div>
 
   <div class="position-row-edit">
-    <label for="pos-input-{{ x.id }}">Текст для поздравления</label>
+    <label class="check position-row-active">
+      <input type="checkbox" name="active" {% if x.active %}checked{% endif %}>
+      Использовать в тексте
+    </label>
     <input id="pos-input-{{ x.id }}"
            name="display_position"
+           aria-label="Должность для поздравления: {{ row.source_title or x.source_position }}"
            value="{{ row.input_value }}"
            placeholder="Не удалось определить автоматически">
-    <div class="position-row-actions">
-      <label class="check">
-        <input type="checkbox" name="active" {% if x.active %}checked{% endif %}>
-        Использовать в тексте
-      </label>
-      <button type="submit" class="position-save">Сохранить</button>
-    </div>
+    <button type="submit" class="position-save">Сохранить</button>
   </div>
 </form>
 {% endfor %}

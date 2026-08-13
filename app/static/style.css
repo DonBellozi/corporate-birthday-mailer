@@ -188,9 +188,7 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
 .position-list{display:grid;gap:8px;margin-bottom:18px}
 .position-row{
   display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(0,420px);
-  gap:8px 22px;
-  align-items:start;
+  gap:9px;
   background:#fff;
   border:1px solid #e0e4e8;
   border-left:3px solid #cbd2d9;
@@ -212,24 +210,24 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
 .position-row .position-status{margin:0;line-height:1.4}
 .position-reason{color:#6b7280}
 
-.position-row-edit label{margin-top:0}
-.position-row-edit input[type=text],
-.position-row-edit input:not([type]){width:100%}
-.position-row-actions{
-  display:flex;
-  flex-wrap:wrap;
+/* Нижний ярус строки: галка слева, длинное поле по центру, кнопка справа.
+   Поле получает всю оставшуюся ширину - операторы вводят сюда длинные
+   должности вида "главного специалиста отдела ... департамента ...". */
+.position-row-edit{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  gap:12px;
   align-items:center;
-  justify-content:space-between;
-  gap:8px 14px;
-  margin-top:8px;
 }
-.position-row-actions .check{margin:0;font-size:13px}
-.position-save{margin:0;padding:7px 14px;font-size:13px}
+.position-row-active{margin:0;font-size:13px;white-space:nowrap}
+.position-save{margin:0;padding:8px 16px;font-size:13px;white-space:nowrap}
 
 .position-empty{text-align:center}
 
 @media(max-width:900px){
-  .position-row{grid-template-columns:1fr;gap:10px}
+  .position-row-edit{grid-template-columns:1fr;gap:8px}
+  .position-row-active{white-space:normal}
+  .position-save{justify-self:start}
   .position-toolbar{position:static}
   .position-search{max-width:none}
 }
