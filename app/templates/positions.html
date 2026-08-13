@@ -3,7 +3,7 @@
 <h1>Должности</h1>
 <p class="muted">
   Система автоматически формирует должность в мужском роде и именительном падеже из кадровой должности и структуры подразделений.
-  Должности влияют только на текст поздравления. Единственный кадровый фильтр самой отправки – состояние работника.
+  Должности влияют только на текст поздравления. Отправку блокируют только состояние работника и признак «Скрыть день рождения» из 1С.
 </p>
 
 {% if state_saved %}
@@ -13,8 +13,9 @@
 <div class="card state-filter-card">
   <h2>Состояния работников</h2>
   <p class="muted">
-    Это единственный фильтр отправки поздравлений. Галочка означает, что работников
-    с таким состоянием поздравляем. Изменять список могут оператор и администратор.
+    Галочка означает, что работников с таким состоянием поздравляем.
+    Дополнительно всегда учитывается признак «Скрыть день рождения» из 1С.
+    Изменять список могут оператор и администратор.
     Новое состояние из 1С по умолчанию считается разрешенным.
   </p>
   <form method="post" action="/positions/states">
@@ -44,48 +45,53 @@
   </p>
 
   {% for person in multi_position_rows %}
-  <form method="post"
-        action="/employee-position-choice"
-        class="employee-position-choice-form">
-    <input type="hidden" name="employee_key" value="{{ person.employee_key }}">
-
-    <div class="multi-position-person">
-      <div class="multi-position-person-head">
+  <details class="multi-position-person" {% if not person.resolved %}open{% endif %}>
+    <summary class="multi-position-person-head multi-position-person-summary">
+      <span>
         <strong>{{ person.fio }}</strong>
-        <span class="employee-position-choice-status">
-          {% if person.resolved %}
-            <span class="ok">✓ Должность выбрана</span>
-          {% else %}
-            <span class="bad">○ Требуется выбрать</span>
-          {% endif %}
-        </span>
-      </div>
+        {% if person.resolved %}
+          <span class="ok"> · ✓ Должность выбрана</span>
+        {% else %}
+          <span class="bad"> · ○ Требуется выбрать</span>
+        {% endif %}
+      </span>
+      <span class="muted small multi-position-summary-action">
+        {{ "Развернуть" if person.resolved else "Требуется действие" }}
+      </span>
+    </summary>
 
-      <div class="multi-position-options">
-        {% for option in person.options %}
-        <label class="multi-position-option">
-          <input type="radio"
-                 name="source_position"
-                 value="{{ option.source_position }}"
-                 {% if option.source_position == person.selected_source_position %}checked{% endif %}
-                 required>
-          <span>
-            <strong>{{ option.display_position or option.source_title }}</strong>
-            {% if option.source_units %}
-            <span class="muted small multi-position-path">
-              {{ option.source_units|join(" / ") }}
+    <div class="multi-position-person-body">
+      <form method="post"
+            action="/employee-position-choice"
+            class="employee-position-choice-form">
+        <input type="hidden" name="employee_key" value="{{ person.employee_key }}">
+
+        <div class="multi-position-options">
+          {% for option in person.options %}
+          <label class="multi-position-option">
+            <input type="radio"
+                   name="source_position"
+                   value="{{ option.source_position }}"
+                   {% if option.source_position == person.selected_source_position %}checked{% endif %}
+                   required>
+            <span>
+              <strong>{{ option.display_position or option.source_title }}</strong>
+              {% if option.source_units %}
+              <span class="muted small multi-position-path">
+                {{ option.source_units|join(" / ") }}
+              </span>
+              {% endif %}
             </span>
-            {% endif %}
-          </span>
-        </label>
-        {% endfor %}
-      </div>
+          </label>
+          {% endfor %}
+        </div>
 
-      <button type="submit" class="employee-position-choice-save">
-        {{ "Изменить выбор" if person.resolved else "Сохранить выбор" }}
-      </button>
+        <button type="submit" class="employee-position-choice-save">
+          {{ "Изменить выбор" if person.resolved else "Сохранить выбор" }}
+        </button>
+      </form>
     </div>
-  </form>
+  </details>
   {% endfor %}
 </div>
 {% endif %}

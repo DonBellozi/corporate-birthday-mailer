@@ -137,3 +137,35 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
   }
 }
 .state-filter-card{border-left:4px solid #315b86}
+
+
+.multi-position-person{
+  overflow:hidden;
+}
+.multi-position-person-summary{
+  list-style:none;
+  cursor:pointer;
+  user-select:none;
+}
+.multi-position-person-summary::-webkit-details-marker{
+  display:none;
+}
+.multi-position-person-summary::before{
+  content:"▸";
+  display:inline-block;
+  margin-right:8px;
+  transition:transform .15s ease;
+}
+.multi-position-person[open] > .multi-position-person-summary::before{
+  transform:rotate(90deg);
+}
+.multi-position-person[open] > .multi-position-person-summary{
+  border-bottom:1px solid #e5e8eb;
+}
+.multi-position-person-body{
+  padding-top:12px;
+}
+.multi-position-summary-action{
+  margin-left:auto;
+  white-space:nowrap;
+}
