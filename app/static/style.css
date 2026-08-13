@@ -13,6 +13,12 @@ label{display:block;font-size:13px;font-weight:600;margin:10px 0 6px}
 input:not([type=checkbox]):not([type=radio]),textarea{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;font:inherit;background:#fff}
 input[type=checkbox],input[type=radio]{flex:none;width:auto;margin:0}
 textarea{resize:vertical}button{border:0;border-radius:5px;padding:9px 14px;background:#315b86;color:white;cursor:pointer;font-weight:600;margin-top:10px}.danger{background:#a33737}.primary{font-size:15px;padding:11px 20px}
+/* Единственное действие на странице "Сегодня", которое реально и сразу
+   отправляет письмо - выделено тем же зеленым, что уже используется для
+   статуса "Можно"/"Подтверждено", чтобы в интерфейсе было одно
+   узнаваемое правило "зеленое = уйдет сейчас", а не локальный цвет только
+   для одной кнопки. */
+button.send-now{background:#207245}
 .check{font-weight:400;display:inline-flex;align-items:center;margin-right:18px;gap:7px}.check input{width:auto}
 table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid #e6e9ec;vertical-align:top}th{background:#f8f9fa}
 .muted{color:#6b7280}.big{font-size:30px;font-weight:700;margin:8px 0}.ok{color:#207245;font-weight:600}.bad{color:#a33737;font-weight:600}

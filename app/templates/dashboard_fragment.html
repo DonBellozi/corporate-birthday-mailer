@@ -28,9 +28,10 @@
     {% endif %}
   </td>
   <td>
+    <button type="button" class="preview-btn" data-employee-id="{{ x.id }}" data-fio="{{ x.fio|e }}">Просмотр</button>
     {% if row.can_send %}
     <form method="post" action="/today/{{ x.id }}/send">
-      <button type="submit">Отправить сейчас</button>
+      <button type="submit" class="send-now">Отправить сейчас</button>
     </form>
     {% endif %}
   </td>
