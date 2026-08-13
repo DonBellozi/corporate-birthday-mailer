@@ -12,7 +12,8 @@ from .settings_service import get_all_settings
 from .xlsx_parser import parse_workbook
 from .rendering import variable_context, render_text, email_html
 from .mail_service import send_html_mail
-from .position_suggester import suggest_position
+from .position_suggester import DEFAULT_SKIP_PREFIXES, parse_skip_prefixes
+from .position_learning import suggest_with_learning
 from .card_service import card_file_path, card_meta, display_width
 
 def latest_successful_import(db):
@@ -557,12 +558,19 @@ def choose_card(db, gender, seed=""):
     return choose_least_used(items, seed=seed)
 
 
-def get_position(db, source_position):
+def get_position(db, source_position, skip_prefixes=DEFAULT_SKIP_PREFIXES):
     """
     Приоритет:
       1. подтвержденная оператором должность;
-      2. автоматическое предложение с высокой уверенностью;
+      2. автоматическое предложение (в том числе по обучению на других
+         подтверждениях) с высокой уверенностью;
       3. иначе должность не вставляется.
+
+    Предложение по аналогии с другими подразделениями (см.
+    position_learning.py) сюда никогда не проходит - его уверенность
+    специально держится ниже порога auto_use, потому что оно не проверено
+    оператором именно для этого подразделения. Письмо в таком случае
+    уйдет без должности, а не с ошибочно угаданной.
     """
     if not source_position:
         return ""
@@ -577,7 +585,7 @@ def get_position(db, source_position):
     if item and item.confirmed and item.display_position.strip():
         return item.display_position.strip()
 
-    suggestion = suggest_position(source_position)
+    suggestion = suggest_with_learning(db, source_position, skip_prefixes)
     return suggestion.text if suggestion.auto_use else ""
 
 def compose_birthday_message(db, emp):
@@ -597,7 +605,7 @@ def compose_birthday_message(db, emp):
         raise ValueError("Нет активного текста поздравления")
 
     position = (
-        get_position(db, emp.source_position)
+        get_position(db, emp.source_position, parse_skip_prefixes(cfg.get("position_skip_units", "")))
         if cfg.get("positions_enabled") == "true"
         else ""
     )

@@ -147,6 +147,19 @@
 </button>
 </div>
 
+<div class="card">
+<h2>Определение должности</h2>
+<label>Служебные названия подразделений (по одному на строку)</label>
+<textarea name="position_skip_units" rows="3">{{ cfg.position_skip_units }}</textarea>
+<p class="muted small">
+  Название пропускается при поиске ближайшего подразделения для текста поздравления,
+  если начинается с одной из этих строк без учета регистра - «Администрация» пропустит
+  и «Администрация ЕКБф». В дереве на странице «Должности» такие уровни остаются видны,
+  пропуск влияет только на итоговый текст. Как это связано с обучением на подтверждениях -
+  описано на самой странице «Должности».
+</p>
+</div>
+
 <div class="card"><h2>Колонки XLSX</h2><div class="cols">
 <div><label>Строка заголовков</label><input name="xlsx_header_row" value="{{ cfg.xlsx_header_row }}"></div>
 <div><label>Вторая строка заголовков</label><input name="xlsx_second_header_row" value="{{ cfg.xlsx_second_header_row }}"></div>

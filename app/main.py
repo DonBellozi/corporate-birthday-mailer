@@ -20,7 +20,8 @@ from .services import import_xlsx, todays_employees, upcoming_birthdays, send_bi
 from .mail_service import fetch_latest_xlsx, send_html_mail
 from .rendering import validate_template
 from .scheduler import start_scheduler
-from .position_suggester import suggest_position, split_source_position
+from .position_suggester import suggest_position, split_source_position, parse_skip_prefixes
+from .position_learning import suggest_with_learning, record_confirmation
 from .card_service import save_uploaded_card, delete_card_file, card_file_path, card_meta
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -209,12 +210,13 @@ def dashboard_fragment(request: Request, db: Session = Depends(get_db)):
         cfg=cfg,
     )
 
+    skip_prefixes = parse_skip_prefixes(cfg.get("position_skip_units", ""))
     unconfirmed_items = list(db.scalars(
         select(PositionMapping).where(PositionMapping.confirmed == False)
     ).all())
     unconfirmed_count = sum(
         1 for item in unconfirmed_items
-        if not suggest_position(item.source_position).auto_use
+        if not suggest_with_learning(db, item.source_position, skip_prefixes).auto_use
     )
     unconfirmed_count += sum(
         1 for item in employee_position_conflicts(db)
@@ -782,6 +784,8 @@ def imports_fetch(request: Request, db: Session = Depends(get_db)):
 @app.get("/positions", response_class=HTMLResponse)
 def positions_page(request: Request, db: Session = Depends(get_db)):
     require_user(request)
+    cfg = get_all_settings(db)
+    skip_prefixes = parse_skip_prefixes(cfg.get("position_skip_units", ""))
     items = list(db.scalars(
         select(PositionMapping).order_by(PositionMapping.confirmed, PositionMapping.source_position)
     ).all())
@@ -792,7 +796,7 @@ def positions_page(request: Request, db: Session = Depends(get_db)):
     counts = {"needs": 0, "suggested": 0, "auto": 0, "confirmed": 0}
 
     for item in items:
-        suggestion = suggest_position(item.source_position)
+        suggestion = suggest_with_learning(db, item.source_position, skip_prefixes)
         source_units, source_title = split_source_position(item.source_position)
 
         # Статус считаем здесь, а не в шаблоне: он нужен и для фильтров,
@@ -827,7 +831,7 @@ def positions_page(request: Request, db: Session = Depends(get_db)):
         options = []
         for source_position in conflict["positions"]:
             mapping = mapping_by_source.get(source_position)
-            suggestion = suggest_position(source_position)
+            suggestion = suggest_with_learning(db, source_position, skip_prefixes)
             source_units, source_title = split_source_position(source_position)
 
             display_position = ""
@@ -961,6 +965,13 @@ async def positions_save(item_id: int, request: Request, db: Session = Depends(g
     item.display_position = str(form.get("display_position", "")).strip()
     item.confirmed = bool(item.display_position)
     item.active = "active" in form
+
+    if item.confirmed:
+        units, title = split_source_position(item.source_position)
+        cfg = get_all_settings(db)
+        skip_prefixes = parse_skip_prefixes(cfg.get("position_skip_units", ""))
+        record_confirmation(db, title, units, item.display_position, skip_prefixes)
+
     db.add(AuditLog(
         actor=actor,
         action="position_changed",

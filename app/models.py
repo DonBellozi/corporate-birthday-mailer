@@ -84,6 +84,33 @@ class EmployeePositionChoice(Base):
     )
 
 
+class PositionPattern(Base):
+    """
+    Выученный на подтверждениях оператора шаблон: сколько уровней
+    подразделений (считая от ближайшего) нужно для этой должности.
+
+    nearest_unit_key="" хранит НЕ существует как отдельная строка - вместо
+    этого при предсказании берется большинство среди всех строк с этим же
+    title_norm. Здесь хранится только "точное" знание: конкретная
+    должность в конкретном (по названию) подразделении уже подтверждалась.
+    Подробности - в position_learning.py.
+    """
+    __tablename__ = "position_patterns"
+    __table_args__ = (
+        UniqueConstraint("title_norm", "nearest_unit_key", name="uq_position_pattern"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title_norm: Mapped[str] = mapped_column(String(500), index=True)
+    nearest_unit_key: Mapped[str] = mapped_column(String(500), default="")
+    depth: Mapped[int] = mapped_column(Integer, default=1)
+    support: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
 class IntroTemplate(Base):
     __tablename__ = "intro_templates"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
