@@ -118,22 +118,30 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
 }
 @keyframes positions-attention-pulse{
   0%,100%{
-    background:#fff;
+    background:#ffffff;
     border-color:#e0e4e8;
     box-shadow:0 1px 2px rgba(0,0,0,.03);
   }
   50%{
-    background:#fff0c7;
-    border-color:#d99a19;
-    box-shadow:0 0 0 3px rgba(217,154,25,.14);
+    background:#fdeaea;
+    border-color:#e2aaaa;
+    box-shadow:0 0 0 3px rgba(180,70,70,.08);
   }
 }
-.attention-pulse{animation:positions-attention-pulse 1.6s ease-in-out infinite}
+.attention-pulse{
+  animation:positions-attention-pulse 2.4s ease-in-out infinite;
+  color:inherit;
+}
+.attention-pulse h3,
+.attention-pulse .big,
+.attention-pulse .muted{
+  color:inherit;
+}
 @media (prefers-reduced-motion: reduce){
   .attention-pulse{
     animation:none;
-    background:#fff0c7;
-    border-color:#d99a19;
+    background:#fdeaea;
+    border-color:#e2aaaa;
   }
 }
 .state-filter-card{border-left:4px solid #315b86}
