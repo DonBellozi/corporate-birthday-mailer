@@ -32,8 +32,12 @@ DEFAULTS = {
     "imap_login": "", "imap_password": "", "imap_folder": "INBOX",
     "imap_sender_filter": "", "imap_subject_filter": "", "imap_poll_minutes": "15",
 
-    # Хэш последнего импортированного по IMAP файла - используется, чтобы не
-    # переимпортировать одно и то же вложение на каждом опросе.
+    # UID последнего уже проверенного подходящего IMAP-письма.
+    # UIDVALIDITY позволяет безопасно сбросить сравнение UID, если папка
+    # была пересоздана. SHA-256 остается вторым уровнем защиты от повторного
+    # импорта одинакового XLSX, присланного новым письмом.
+    "imap_last_message_uid": "",
+    "imap_uidvalidity": "",
     "imap_last_file_hash": "",
 
     # Служебное состояние ежедневной кадровой выгрузки.
@@ -120,7 +124,6 @@ def get_all_settings(db: Session) -> dict[str, str]:
         result[key] = decrypt_value(obj.value) if obj.encrypted else obj.value
 
     return result
-
 def set_settings(db: Session, data: dict[str, str]):
     for key, value in data.items():
         if key not in DEFAULTS:

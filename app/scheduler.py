@@ -6,7 +6,7 @@ from .db import SessionLocal
 from .models import AuditLog
 from .settings_service import get_all_settings, set_settings
 from .services import todays_employees, send_birthday, import_xlsx
-from .mail_service import fetch_latest_xlsx
+from .mail_service import fetch_latest_xlsx_if_new
 
 scheduler = BackgroundScheduler()
 _last_send_day = None
@@ -14,27 +14,54 @@ _last_imap_check = None
 
 def _check_mail(db, cfg):
     """
-    Забирает XLSX по IMAP и импортирует его, только если файл действительно
-    изменился с прошлого раза. Иначе одно и то же вложение переимпортировалось
-    бы заново на каждом опросе (каждые imap_poll_minutes), плодя пустые
-    ImportRun/EmployeeSnapshot без пользы.
+    Сначала проверяет только UID подходящих IMAP-писем.
+
+    Уже обработанный UID не скачивается повторно. Для нового письма XLSX
+    скачивается один раз, после чего дополнительно проверяется SHA-256.
+    Хэш остается вторым уровнем защиты на случай, если новое письмо содержит
+    то же самое вложение.
     """
     try:
-        path = fetch_latest_xlsx(cfg, Path("/app/data/imports"))
+        result = fetch_latest_xlsx_if_new(
+            cfg,
+            Path("/app/data/imports"),
+            last_uid=cfg.get("imap_last_message_uid", ""),
+            last_uidvalidity=cfg.get("imap_uidvalidity", ""),
+        )
+
+        if not result["new_message"]:
+            return
+
+        checked_state = {
+            "imap_last_message_uid": result.get("uid", ""),
+            "imap_uidvalidity": result.get("uidvalidity", ""),
+        }
+
+        path = result.get("path")
         if not path:
+            # Письмо подходит под фильтр, но XLSX в нем нет. Запоминаем UID,
+            # чтобы не скачивать это же письмо снова при следующем опросе.
+            set_settings(db, checked_state)
             return
 
         file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
         if file_hash == cfg.get("imap_last_file_hash", ""):
             path.unlink(missing_ok=True)
+            set_settings(db, {
+                **checked_state,
+                "imap_last_file_hash": file_hash,
+            })
             return
 
+        # UID фиксируем только после успешного импорта. Если импорт упал
+        # из-за временной ошибки, это же письмо будет безопасно повторено
+        # на следующем опросе вместо того, чтобы потеряться.
         import_xlsx(db, path, source="imap")
-        set_settings(db, {"imap_last_file_hash": file_hash})
+        set_settings(db, {
+            **checked_state,
+            "imap_last_file_hash": file_hash,
+        })
     except Exception as exc:
-        # Раньше ошибка молча проглатывалась - администратор узнавал о
-        # проблеме, только заметив, что рассылка не работает. Теперь она
-        # видна в журнале.
         db.add(AuditLog(actor="scheduler", action="imap_fetch_failed", details=str(exc)))
         db.commit()
 
