@@ -81,7 +81,6 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
 .position-congratulate-warning{font-size:12px;margin:2px 0 4px 0}
 
 .multi-position-summary{border-left:4px solid #d99a19}
-.multi-position-person{padding:10px 0 14px 0;border-top:1px solid #e2e6ea}
 .multi-position-person:first-of-type{border-top:0}
 .multi-position-person-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-bottom:7px}
 .multi-position-options{display:grid;gap:4px;margin-bottom:8px}
@@ -155,6 +154,8 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
 
 
 .multi-position-person{
+  padding:10px 0 14px 0;
+  border-top:1px solid #e2e6ea;
   overflow:hidden;
 }
 .multi-position-person-summary{
@@ -183,4 +184,90 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
 .multi-position-summary-action{
   margin-left:auto;
   white-space:nowrap;
+}
+
+
+/* ---- Страница "Должности": компактный список вместо стены карточек ---- */
+
+.position-toolbar{
+  display:flex;
+  flex-wrap:wrap;
+  gap:14px 20px;
+  align-items:flex-end;
+  justify-content:space-between;
+  position:sticky;
+  top:0;
+  z-index:5;
+}
+.position-filters{display:flex;flex-wrap:wrap;gap:6px}
+.pos-filter{
+  margin:0;
+  background:#eef1f4;
+  color:#3d4753;
+  font-weight:600;
+  font-size:13px;
+  padding:7px 11px;
+  border:1px solid transparent;
+}
+.pos-filter:hover{background:#e3e8ed}
+.pos-filter.is-active{background:#315b86;color:#fff}
+.pos-count{
+  display:inline-block;
+  margin-left:5px;
+  padding:1px 6px;
+  border-radius:9px;
+  background:rgba(0,0,0,.10);
+  font-size:12px;
+}
+.pos-filter.is-active .pos-count{background:rgba(255,255,255,.22)}
+.position-search{min-width:280px;flex:1;max-width:420px}
+.position-search label{margin-top:0}
+
+.position-list{display:grid;gap:8px;margin-bottom:18px}
+.position-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,420px);
+  gap:8px 22px;
+  align-items:start;
+  background:#fff;
+  border:1px solid #e0e4e8;
+  border-left:3px solid #cbd2d9;
+  border-radius:7px;
+  padding:12px 14px;
+}
+.position-row[hidden]{display:none}
+.position-row:hover{border-color:#b8c2cc}
+.position-row.saved{border-color:#8dbfa2;background:#fbfefc}
+
+/* Цвет левой кромки сразу показывает статус, без чтения подписи. */
+.position-row.status-needs{border-left-color:#a33737}
+.position-row.status-suggested{border-left-color:#d99a19}
+.position-row.status-auto{border-left-color:#207245}
+.position-row.status-confirmed{border-left-color:#315b86}
+
+.position-row-path{margin-bottom:2px;line-height:1.35}
+.position-row-title{font-weight:600;line-height:1.35;margin-bottom:4px}
+.position-row .position-status{margin:0;line-height:1.4}
+.position-reason{color:#6b7280}
+
+.position-row-edit label{margin-top:0}
+.position-row-edit input[type=text],
+.position-row-edit input:not([type]){width:100%}
+.position-row-actions{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px 14px;
+  margin-top:8px;
+}
+.position-row-actions .check{margin:0;font-size:13px}
+.position-save{margin:0;padding:7px 14px;font-size:13px}
+
+.position-empty{text-align:center}
+
+@media(max-width:900px){
+  .position-row{grid-template-columns:1fr;gap:10px}
+  .position-toolbar{position:static}
+  .position-search{max-width:none}
 }

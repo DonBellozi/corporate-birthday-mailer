@@ -789,15 +789,37 @@ def positions_page(request: Request, db: Session = Depends(get_db)):
     rows = []
     mapping_by_source = {item.source_position: item for item in items}
 
+    counts = {"needs": 0, "suggested": 0, "auto": 0, "confirmed": 0}
+
     for item in items:
         suggestion = suggest_position(item.source_position)
         source_units, source_title = split_source_position(item.source_position)
+
+        # Статус считаем здесь, а не в шаблоне: он нужен и для фильтров,
+        # и для счетчиков в верхней панели.
+        if item.confirmed:
+            status = "confirmed"
+        elif suggestion.auto_use:
+            status = "auto"
+        elif suggestion.text:
+            status = "suggested"
+        else:
+            status = "needs"
+        counts[status] += 1
+
         rows.append({
             "item": item,
             "suggestion": suggestion,
             "input_value": item.display_position if item.display_position else suggestion.text,
             "source_units": source_units,
             "source_title": source_title,
+            "status": status,
+            # Строка для живого поиска по странице.
+            "search": " ".join([
+                item.source_position or "",
+                item.display_position or "",
+                suggestion.text or "",
+            ]).lower(),
         })
 
     multi_position_rows = []
@@ -834,6 +856,10 @@ def positions_page(request: Request, db: Session = Depends(get_db)):
         "positions.html",
         rows=rows,
         multi_position_rows=multi_position_rows,
+        counts=counts,
+        unresolved_conflicts=sum(
+            1 for x in multi_position_rows if not x["resolved"]
+        ),
     )
 
 

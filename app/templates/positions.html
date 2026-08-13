@@ -7,12 +7,20 @@
 </p>
 
 {% if multi_position_rows %}
-<div class="card multi-position-summary">
-  <h2>Работники с несколькими должностями</h2>
-  <p class="muted">
+<details class="card multi-position-summary" {% if unresolved_conflicts %}open{% endif %}>
+  <summary class="multi-position-person-summary">
+    <strong>Работники с несколькими должностями</strong>
+    {% if unresolved_conflicts %}
+      <span class="bad"> · требуется выбрать: {{ unresolved_conflicts }}</span>
+    {% else %}
+      <span class="ok"> · все выбраны</span>
+    {% endif %}
+  </summary>
+
+  <p class="muted small">
     Один и тот же работник найден в текущей выгрузке по нескольким должностям.
     Выберите, какую из них использовать в тексте поздравления.
-    На возможность отправки поздравления этот выбор больше не влияет.
+    На возможность отправки поздравления этот выбор не влияет.
   </p>
 
   {% for person in multi_position_rows %}
@@ -57,6 +65,7 @@
           {% endfor %}
         </div>
 
+        <div class="employee-position-choice-status muted small"></div>
         <button type="submit" class="employee-position-choice-save">
           {{ "Изменить выбор" if person.resolved else "Сохранить выбор" }}
         </button>
@@ -64,123 +73,141 @@
     </div>
   </details>
   {% endfor %}
-</div>
+</details>
 {% endif %}
 
+{% if rows %}
+<div class="card position-toolbar">
+  <div class="position-filters" role="group" aria-label="Фильтр по статусу">
+    <button type="button" class="pos-filter is-active" data-filter="all">
+      Все <span class="pos-count">{{ rows|length }}</span>
+    </button>
+    <button type="button" class="pos-filter" data-filter="needs">
+      ○ Требуют настройки <span class="pos-count">{{ counts.needs }}</span>
+    </button>
+    <button type="button" class="pos-filter" data-filter="suggested">
+      ⚠ Предложено <span class="pos-count">{{ counts.suggested }}</span>
+    </button>
+    <button type="button" class="pos-filter" data-filter="auto">
+      ⚙ Автоматически <span class="pos-count">{{ counts.auto }}</span>
+    </button>
+    <button type="button" class="pos-filter" data-filter="confirmed">
+      ✓ Подтверждено <span class="pos-count">{{ counts.confirmed }}</span>
+    </button>
+  </div>
+
+  <div class="position-search">
+    <label for="position-search-input">Поиск по должности или подразделению</label>
+    <input id="position-search-input" type="search" autocomplete="off"
+           placeholder="например: отдел кадров или специалист">
+  </div>
+</div>
+
+<div class="position-list" id="position-list">
 {% for row in rows %}
 {% set x = row.item %}
 {% set s = row.suggestion %}
-<div class="card position-card">
-<form method="post" action="/positions/{{ x.id }}" class="position-form">
-  <div class="source position-tree">
+<form method="post" action="/positions/{{ x.id }}"
+      class="position-row position-form status-{{ row.status }}"
+      data-status="{{ row.status }}"
+      data-search="{{ row.search }}">
+
+  <div class="position-row-source">
     {% if row.source_units %}
-      {% for unit in row.source_units %}
-        <div class="position-tree-level">
-          <span class="muted">{{ loop.index }}.</span> {{ unit }}
-        </div>
-      {% endfor %}
+    <div class="position-row-path muted small">{{ row.source_units|join(" / ") }}</div>
     {% endif %}
-    {% if row.source_title %}
-      <div class="position-tree-title"><strong>Должность 1С:</strong> {{ row.source_title }}</div>
-    {% endif %}
+    <div class="position-row-title">{{ row.source_title or x.source_position }}</div>
+    <div class="position-status muted small">
+      {% if x.confirmed %}
+        <span class="ok">✓ Подтверждено вручную</span>
+      {% elif s.auto_use %}
+        <span class="ok">⚙ Автоматически · {{ (s.confidence * 100)|round|int }}%</span>
+      {% elif s.text %}
+        <span class="badge">⚠ Предложено · {{ (s.confidence * 100)|round|int }}%</span>
+      {% else %}
+        <span class="bad">○ Требует настройки</span>
+      {% endif %}
+      {% if s.reason %}<span class="position-reason"> · {{ s.reason }}</span>{% endif %}
+    </div>
   </div>
 
-  <label>Для поздравления · полное дерево, мужской род, именительный падеж</label>
-  <input name="display_position"
-         value="{{ row.input_value }}"
-         placeholder="Не удалось определить автоматически">
-
-  <div class="muted small position-status">
-    {% if x.confirmed %}
-      <span class="ok">✓ Подтверждено вручную</span>
-    {% elif s.auto_use %}
-      <span class="ok">⚙ Автоматически · уверенность {{ (s.confidence * 100)|round|int }}%</span>
-      {% if s.reason %} · {{ s.reason }}{% endif %}
-    {% elif s.text %}
-      <span class="badge">⚠ Предложено · уверенность {{ (s.confidence * 100)|round|int }}%</span>
-      {% if s.reason %} · {{ s.reason }}{% endif %}
-    {% else %}
-      <span class="bad">○ Требует настройки</span>
-      {% if s.reason %} · {{ s.reason }}{% endif %}
-    {% endif %}
+  <div class="position-row-edit">
+    <label for="pos-input-{{ x.id }}">Текст для поздравления</label>
+    <input id="pos-input-{{ x.id }}"
+           name="display_position"
+           value="{{ row.input_value }}"
+           placeholder="Не удалось определить автоматически">
+    <div class="position-row-actions">
+      <label class="check">
+        <input type="checkbox" name="active" {% if x.active %}checked{% endif %}>
+        Использовать в тексте
+      </label>
+      <button type="submit" class="position-save">Сохранить</button>
+    </div>
   </div>
-
-  <div class="position-options">
-    <label class="check">
-      <input type="checkbox" name="active" {% if x.active %}checked{% endif %}>
-      Использовать должность в тексте
-    </label>
-  </div>
-
-  <button type="submit" class="position-save">{{ "Сохранить" if x.confirmed else "Подтвердить / изменить" }}</button>
 </form>
-</div>
 {% endfor %}
+</div>
 
-{% if not rows %}
+<div class="card muted position-empty" id="position-empty" hidden>
+  Ничего не найдено. Измените запрос или выберите другой фильтр.
+</div>
+{% else %}
 <div class="card muted">Появятся после первого импорта XLSX.</div>
 {% endif %}
 
 <script>
 (() => {
-  document.querySelectorAll(".position-form").forEach((form) => {
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
+  const list = document.getElementById("position-list");
+  if (!list) return;
 
-      const button = form.querySelector(".position-save");
-      const status = form.querySelector(".position-status");
-      const input = form.querySelector('input[name="display_position"]');
+  const rows = Array.from(list.querySelectorAll(".position-row"));
+  const search = document.getElementById("position-search-input");
+  const empty = document.getElementById("position-empty");
+  const filters = Array.from(document.querySelectorAll(".pos-filter"));
 
-      const oldButtonText = button.textContent;
-      button.disabled = true;
-      button.textContent = "Сохраняем...";
+  let activeFilter = "all";
 
-      try {
-        const response = await fetch(form.action, {
-          method: "POST",
-          body: new FormData(form),
-          credentials: "same-origin",
-          redirect: "follow"
-        });
+  function applyFilters() {
+    const query = (search.value || "").trim().toLowerCase();
+    let visible = 0;
 
-        if (!response.ok) {
-          throw new Error(`Ошибка HTTP ${response.status}`);
-        }
+    rows.forEach((row) => {
+      const matchesStatus =
+        activeFilter === "all" || row.dataset.status === activeFilter;
+      const matchesQuery =
+        !query || (row.dataset.search || "").includes(query);
+      const show = matchesStatus && matchesQuery;
+      row.hidden = !show;
+      if (show) visible++;
+    });
 
-        const value = (input.value || "").trim();
+    empty.hidden = visible > 0;
+  }
 
-        if (value) {
-          status.innerHTML = '<span class="ok">✓ Подтверждено вручную</span>';
-          button.textContent = "Сохранено";
-        } else {
-          status.innerHTML = '<span class="bad">○ Требует настройки</span>';
-          button.textContent = "Сохранено";
-        }
-
-        form.classList.add("saved");
-        setTimeout(() => {
-          button.textContent = "Сохранить";
-          form.classList.remove("saved");
-        }, 1200);
-
-      } catch (error) {
-        button.textContent = oldButtonText;
-        status.insertAdjacentHTML(
-          "beforeend",
-          '<div class="bad">Не удалось сохранить. Попробуйте еще раз.</div>'
-        );
-      } finally {
-        button.disabled = false;
-      }
+  filters.forEach((button) => {
+    button.addEventListener("click", () => {
+      filters.forEach((x) => x.classList.remove("is-active"));
+      button.classList.add("is-active");
+      activeFilter = button.dataset.filter;
+      applyFilters();
     });
   });
 
-  document.querySelectorAll(".employee-position-choice-form").forEach((form) => {
+  let debounce;
+  search.addEventListener("input", () => {
+    window.clearTimeout(debounce);
+    debounce = window.setTimeout(applyFilters, 120);
+  });
+
+  // Сохранение без перезагрузки страницы: список длинный, терять
+  // позицию прокрутки и состояние фильтров на каждой правке неудобно.
+  function bindAsyncSave(form, onSuccess) {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
 
-      const button = form.querySelector(".employee-position-choice-save");
-      const status = form.querySelector(".employee-position-choice-status");
+      const button = form.querySelector("button[type=submit]");
+      const status = form.querySelector(".position-status, .employee-position-choice-status");
       const oldText = button.textContent;
 
       button.disabled = true;
@@ -193,27 +220,48 @@
           credentials: "same-origin",
           redirect: "follow"
         });
+        if (!response.ok) throw new Error("HTTP " + response.status);
 
-        if (!response.ok) {
-          throw new Error(`Ошибка HTTP ${response.status}`);
-        }
-
-        status.innerHTML = '<span class="ok">✓ Должность выбрана</span>';
+        onSuccess(form, status);
         button.textContent = "Сохранено";
-
-        setTimeout(() => {
-          button.textContent = "Изменить выбор";
+        form.classList.add("saved");
+        window.setTimeout(() => {
+          button.textContent = oldText;
+          form.classList.remove("saved");
         }, 1200);
       } catch (error) {
         button.textContent = oldText;
-        status.innerHTML = '<span class="bad">Не удалось сохранить</span>';
+        if (status) {
+          status.innerHTML = '<span class="bad">Не удалось сохранить. Попробуйте еще раз.</span>';
+        }
       } finally {
         button.disabled = false;
       }
     });
+  }
+
+  rows.forEach((form) => {
+    bindAsyncSave(form, (f, status) => {
+      const value = (f.querySelector('input[name="display_position"]').value || "").trim();
+      // Строка сохранена вручную - она становится подтвержденной,
+      // поэтому обновляем и статус, и фильтрационный атрибут.
+      if (value) {
+        status.innerHTML = '<span class="ok">✓ Подтверждено вручную</span>';
+        f.dataset.status = "confirmed";
+        f.className = "position-row position-form status-confirmed";
+      } else {
+        status.innerHTML = '<span class="bad">○ Требует настройки</span>';
+        f.dataset.status = "needs";
+        f.className = "position-row position-form status-needs";
+      }
+    });
   });
 
+  document.querySelectorAll(".employee-position-choice-form").forEach((form) => {
+    bindAsyncSave(form, (f, status) => {
+      if (status) status.innerHTML = '<span class="ok">✓ Должность выбрана</span>';
+    });
+  });
 })();
 </script>
-
 {% endblock %}
