@@ -2,9 +2,85 @@
 {% block content %}
 <h1>Настройки</h1>
 {% if saved %}<div class="alert success">Настройки сохранены.</div>{% endif %}
+{% if state_saved %}<div class="alert success">Сохранено.</div>{% endif %}
 {% if test_message %}<div class="alert success">{{ test_message }}</div>{% endif %}
 {% if test_error %}<div class="alert error">{{ test_error }}</div>{% endif %}
-<form method="post">
+
+<div class="card state-filter-card">
+  <h2>Состояния работников</h2>
+  <p class="muted">
+    Галочка означает, что работников с таким состоянием поздравляем.
+    Дополнительно всегда учитывается признак «Скрыть день рождения» из 1С.
+    Изменять список могут оператор и администратор.
+    Новое состояние из 1С по умолчанию считается разрешенным.
+  </p>
+  <form method="post" action="/positions/states">
+    <div class="state-selector">
+    {% for state in employee_states %}
+      <input type="hidden" name="employee_state_known" value="{{ state }}">
+      <label class="check state-check">
+        <input type="checkbox"
+               name="employee_state_allowed"
+               value="{{ state }}"
+               {% if state not in blocked_states %}checked{% endif %}>
+        {{ state }}
+      </label>
+    {% endfor %}
+    </div>
+    <button type="submit">Сохранить состояния</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Родившиеся 29 февраля</h2>
+  <p class="muted">
+    В невисокосный год такой календарной даты не существует.
+    Выберите, каким днем поздравлять этих работников.
+  </p>
+  <form method="post" action="/settings/feb29-policy">
+    <label class="check">
+      <input type="radio" name="feb29_policy" value="feb28"
+             {% if cfg.feb29_policy != "mar1" %}checked{% endif %}>
+      28 февраля
+    </label>
+    <label class="check">
+      <input type="radio" name="feb29_policy" value="mar1"
+             {% if cfg.feb29_policy == "mar1" %}checked{% endif %}>
+      1 марта
+    </label>
+    <button type="submit">Сохранить</button>
+  </form>
+</div>
+
+<div class="card">
+<h2>Тестовая отправка</h2>
+<p class="muted">
+  Проверяет <strong>сохраненные</strong> настройки SMTP. Для теста используется готовое поздравление
+  одного из сотрудников, чтобы проверить итоговую генерацию текста и открытки.
+  Тест не учитывается как отправленное поздравление и не увеличивает счетчики использования.
+</p>
+<form method="post" action="/settings/test-mail">
+  <div class="rowline">
+    <div style="flex:1">
+      <label>Адрес для теста</label>
+      <input
+        type="email"
+        name="test_recipient"
+        value="{{ test_recipient or '' }}"
+        placeholder="user@domain.ru"
+        required
+      >
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button type="submit">Отправить тест</button>
+    </div>
+  </div>
+</form>
+</div>
+
+{% if is_admin %}
+<form method="post" action="/settings">
 <div class="card"><h2>Рассылка</h2><div class="cols">
 <div><label>Группа рассылки</label><input name="mail_recipient" value="{{ cfg.mail_recipient }}"></div>
 <div><label>Адрес отправителя</label><input name="mail_from" value="{{ cfg.mail_from }}"></div>
@@ -87,33 +163,6 @@
 <button class="primary" type="submit">Сохранить</button>
 </form>
 
-<div class="card">
-<h2>Тестовая отправка</h2>
-<p class="muted">
-  Проверяет <strong>сохраненные</strong> настройки SMTP. Для теста используется готовое поздравление
-  одного из сотрудников, чтобы проверить итоговую генерацию текста и открытки.
-  Тест не учитывается как отправленное поздравление и не увеличивает счетчики использования.
-</p>
-<form method="post" action="/settings/test-mail">
-  <div class="rowline">
-    <div style="flex:1">
-      <label>Адрес для теста</label>
-      <input
-        type="email"
-        name="test_recipient"
-        value="{{ test_recipient or '' }}"
-        placeholder="user@domain.ru"
-        required
-      >
-    </div>
-    <div>
-      <label>&nbsp;</label>
-      <button type="submit">Отправить тест</button>
-    </div>
-  </div>
-</form>
-</div>
-
 <script>
 (function () {
   const button = document.getElementById("ad-test-button");
@@ -171,5 +220,6 @@
   });
 })();
 </script>
+{% endif %}
 
 {% endblock %}

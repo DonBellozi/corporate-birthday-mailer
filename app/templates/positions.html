@@ -6,35 +6,6 @@
   Должности влияют только на текст поздравления. Отправку блокируют только состояние работника и признак «Скрыть день рождения» из 1С.
 </p>
 
-{% if state_saved %}
-<div class="alert success">Состояния работников сохранены.</div>
-{% endif %}
-
-<div class="card state-filter-card">
-  <h2>Состояния работников</h2>
-  <p class="muted">
-    Галочка означает, что работников с таким состоянием поздравляем.
-    Дополнительно всегда учитывается признак «Скрыть день рождения» из 1С.
-    Изменять список могут оператор и администратор.
-    Новое состояние из 1С по умолчанию считается разрешенным.
-  </p>
-  <form method="post" action="/positions/states">
-    <div class="state-selector">
-    {% for state in employee_states %}
-      <input type="hidden" name="employee_state_known" value="{{ state }}">
-      <label class="check state-check">
-        <input type="checkbox"
-               name="employee_state_allowed"
-               value="{{ state }}"
-               {% if state not in blocked_states %}checked{% endif %}>
-        {{ state }}
-      </label>
-    {% endfor %}
-    </div>
-    <button type="submit">Сохранить состояния</button>
-  </form>
-</div>
-
 {% if multi_position_rows %}
 <div class="card multi-position-summary">
   <h2>Работники с несколькими должностями</h2>

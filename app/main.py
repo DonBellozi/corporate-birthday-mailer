@@ -194,7 +194,7 @@ def dashboard_fragment(request: Request, db: Session = Depends(get_db)):
     cfg = get_all_settings(db)
 
     today_rows = []
-    for emp in todays_employees(db, employees=employees):
+    for emp in todays_employees(db, employees=employees, cfg=cfg):
         can_send, send_reason = birthday_send_eligibility(db, emp, cfg=cfg)
         today_rows.append({
             "employee": emp,
@@ -447,13 +447,18 @@ def users_delete(
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, db: Session = Depends(get_db)):
-    require_admin(request)
+    # Страницу видят и оператор, и администратор - каждому показывается
+    # своя часть в settings.html (is_admin передается через page()).
+    # Полная форма настроек сохраняется только через POST /settings,
+    # который по-прежнему доступен лишь администратору.
+    require_user(request)
     cfg = get_all_settings(db)
     return page(
         request,
         "settings.html",
         cfg=cfg,
         saved=False,
+        state_saved=request.query_params.get("state_saved") == "1",
         employee_states=current_employee_states(db),
         blocked_states=blocked_employee_states(cfg),
         test_message=None,
@@ -462,6 +467,24 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
         ad_test_message=None,
         ad_test_error=None,
     )
+
+
+@app.post("/settings/feb29-policy", response_class=HTMLResponse)
+async def settings_feb29_policy(request: Request, db: Session = Depends(get_db)):
+    actor = require_user(request)
+    form = await request.form()
+    policy = str(form.get("feb29_policy", "feb28"))
+    if policy not in {"feb28", "mar1"}:
+        policy = "feb28"
+
+    set_settings(db, {"feb29_policy": policy})
+    db.add(AuditLog(
+        actor=actor,
+        action="feb29_policy_changed",
+        details="28 февраля" if policy == "feb28" else "1 марта",
+    ))
+    db.commit()
+    return RedirectResponse("/settings?state_saved=1", 303)
 
 @app.post("/settings", response_class=HTMLResponse)
 async def settings_post(request: Request, db: Session = Depends(get_db)):
@@ -579,7 +602,7 @@ def settings_test_mail(
     test_recipient: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    actor = require_admin(request)
+    actor = require_user(request)
     cfg = get_all_settings(db)
     recipient = test_recipient.strip()
 
@@ -602,7 +625,7 @@ def settings_test_mail(
     # чтобы проверить итоговую сборку письма и открытки.
     sample_emp = None
 
-    for emp in todays_employees(db):
+    for emp in todays_employees(db, cfg=cfg):
         can_send, _ = birthday_send_eligibility(db, emp)
         if can_send:
             sample_emp = emp
@@ -806,15 +829,11 @@ def positions_page(request: Request, db: Session = Depends(get_db)):
             "options": options,
         })
 
-    cfg = get_all_settings(db)
     return page(
         request,
         "positions.html",
         rows=rows,
         multi_position_rows=multi_position_rows,
-        employee_states=current_employee_states(db),
-        blocked_states=blocked_employee_states(cfg),
-        state_saved=request.query_params.get("state_saved") == "1",
     )
 
 
@@ -860,7 +879,7 @@ async def positions_states_save(
         ),
     ))
     db.commit()
-    return RedirectResponse("/positions?state_saved=1", 303)
+    return RedirectResponse("/settings?state_saved=1", 303)
 
 
 @app.post("/employee-position-choice")

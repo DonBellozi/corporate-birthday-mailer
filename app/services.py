@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from pathlib import Path
+import calendar
 import hashlib
 import json
 import re
@@ -426,16 +427,34 @@ def import_xlsx(
         raise
 
 
-def todays_employees(db, employees=None):
+def effective_birthday(day: int, month: int, year: int, policy: str = "feb28") -> tuple[int, int]:
+    """
+    День/месяц, в которые фактически поздравляют работника в указанном году.
+
+    Обычно совпадает с датой из 1С. Исключение - 29 февраля: в невисокосный
+    год такой календарной даты не существует, поэтому поздравление переносится
+    на 28 февраля или 1 марта в зависимости от настройки `feb29_policy`.
+    """
+    if day == 29 and month == 2 and not calendar.isleap(year):
+        return (1, 3) if policy == "mar1" else (28, 2)
+    return day, month
+
+
+def todays_employees(db, employees=None, cfg=None):
     today = date.today()
     if employees is None:
         employees = resolved_latest_employees(db)
+    if cfg is None:
+        cfg = get_all_settings(db)
 
-    return [
-        emp for emp in employees
-        if emp.birthday_day == today.day
-        and emp.birthday_month == today.month
-    ]
+    policy = cfg.get("feb29_policy", "feb28")
+
+    result = []
+    for emp in employees:
+        day, month = effective_birthday(emp.birthday_day, emp.birthday_month, today.year, policy)
+        if day == today.day and month == today.month:
+            result.append(emp)
+    return result
 
 
 def upcoming_birthdays(db, days=30, employees=None, cfg=None):
@@ -456,6 +475,8 @@ def upcoming_birthdays(db, days=30, employees=None, cfg=None):
     if cfg is None:
         cfg = get_all_settings(db)
 
+    policy = cfg.get("feb29_policy", "feb28")
+
     date_map = {}
     for offset in range(1, days + 1):
         target = today + timedelta(days=offset)
@@ -463,8 +484,17 @@ def upcoming_birthdays(db, days=30, employees=None, cfg=None):
 
     result = []
     for emp in employees:
+        # Обычная дата рождения ищется как раньше. Для родившихся 29 февраля
+        # проверяем эффективную дату в текущем и в следующем году - этого
+        # достаточно, окно `days` не превышает год.
         key = (emp.birthday_day, emp.birthday_month)
         match = date_map.get(key)
+        if not match and emp.birthday_day == 29 and emp.birthday_month == 2:
+            for candidate_year in (today.year, today.year + 1):
+                eday, emonth = effective_birthday(29, 2, candidate_year, policy)
+                match = date_map.get((eday, emonth))
+                if match:
+                    break
         if not match:
             continue
 
