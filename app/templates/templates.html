@@ -11,7 +11,7 @@
 <form method="post" action="/templates/new">
 <label>Название</label><input name="name" required>
 <label>Текст</label>
-<textarea name="body" rows="4" required>{% raw %}Сегодня особенный и праздничный день: свой День рождения отмечает {{ colleague.nom }} – {{ fio }}.{% endraw %}</textarea>
+<textarea name="body" rows="4" required placeholder="{% raw %}Сегодня особенный и праздничный день: свой День рождения отмечает {{ colleague.nom }} – {{ fio }}.{% endraw %}"></textarea>
 <button type="submit">Добавить</button>
 </form>
 </div>

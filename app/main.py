@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
-import os, shutil, uuid, json
+import os, re, shutil, uuid, json
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
@@ -1129,6 +1129,26 @@ def card_image(item_id: int, request: Request, db: Session = Depends(get_db)):
 
 
 
+def _normalize_body(text: str) -> str:
+    """Для сравнения текстов на полное совпадение - разница только в
+    пробелах/переносах строк или регистре не считается новым текстом."""
+    return re.sub(r"\s+", " ", (text or "")).strip().lower()
+
+
+def _find_duplicate_intro(db, body: str, exclude_id: int | None = None) -> str | None:
+    """Возвращает название совпадающего по тексту варианта, если он уже есть."""
+    normalized = _normalize_body(body)
+    if not normalized:
+        return None
+    query = select(IntroTemplate)
+    if exclude_id is not None:
+        query = query.where(IntroTemplate.id != exclude_id)
+    for item in db.scalars(query).all():
+        if _normalize_body(item.body) == normalized:
+            return item.name
+    return None
+
+
 @app.get("/templates", response_class=HTMLResponse)
 def templates_page(request: Request, db: Session = Depends(get_db)):
     require_user(request)
@@ -1138,11 +1158,17 @@ def templates_page(request: Request, db: Session = Depends(get_db)):
 @app.post("/templates/new")
 def template_new(request: Request, name: str = Form(...), body: str = Form(...), db: Session = Depends(get_db)):
     actor = require_user(request)
+    body = body.strip()
     unknown = validate_template(body)
-    if unknown:
+    duplicate_of = _find_duplicate_intro(db, body) if not unknown else None
+    if unknown or duplicate_of:
         items = list(db.scalars(select(IntroTemplate).order_by(IntroTemplate.id)).all())
-        return page(request, "templates.html", items=items, error="Неизвестные переменные: " + ", ".join(unknown))
-    db.add(IntroTemplate(name=name.strip(), body=body.strip(), active=True))
+        if unknown:
+            error = "Неизвестные переменные: " + ", ".join(unknown)
+        else:
+            error = f"Точно такой же текст уже есть в варианте «{duplicate_of}»."
+        return page(request, "templates.html", items=items, error=error)
+    db.add(IntroTemplate(name=name.strip(), body=body, active=True))
     db.add(AuditLog(actor=actor, action="intro_created", details=name))
     db.commit()
     return RedirectResponse("/templates", 303)
@@ -1156,8 +1182,14 @@ async def template_save(item_id: int, request: Request, db: Session = Depends(ge
     form = await request.form()
     body = str(form.get("body", "")).strip()
     unknown = validate_template(body)
-    if unknown:
-        raise HTTPException(400, "Неизвестные переменные: " + ", ".join(unknown))
+    duplicate_of = _find_duplicate_intro(db, body, exclude_id=item_id) if not unknown else None
+    if unknown or duplicate_of:
+        items = list(db.scalars(select(IntroTemplate).order_by(IntroTemplate.id)).all())
+        if unknown:
+            error = "Неизвестные переменные: " + ", ".join(unknown)
+        else:
+            error = f"Точно такой же текст уже есть в варианте «{duplicate_of}»."
+        return page(request, "templates.html", items=items, error=error)
     item.name = str(form.get("name", item.name)).strip()
     item.body = body
     item.active = "active" in form
