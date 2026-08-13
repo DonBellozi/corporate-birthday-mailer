@@ -22,7 +22,10 @@ def fetch_latest_xlsx(cfg: dict[str, str], target_dir: Path):
     port = int(cfg.get("imap_port", "993"))
     use_ssl = cfg.get("imap_ssl", "true").lower() == "true"
 
-    client = imaplib.IMAP4_SSL(host, port) if use_ssl else imaplib.IMAP4(host, port)
+    client = (
+        imaplib.IMAP4_SSL(host, port, timeout=30) if use_ssl
+        else imaplib.IMAP4(host, port, timeout=30)
+    )
     try:
         client.login(cfg.get("imap_login", ""), cfg.get("imap_password", ""))
         client.select(cfg.get("imap_folder", "INBOX") or "INBOX")
@@ -146,7 +149,16 @@ def fetch_latest_xlsx_if_new(
 
     port = int(cfg.get("imap_port", "993"))
     use_ssl = cfg.get("imap_ssl", "true").lower() == "true"
-    client = imaplib.IMAP4_SSL(host, port) if use_ssl else imaplib.IMAP4(host, port)
+    # Таймаут обязателен: без него зависший коннект к недоступному серверу
+    # блокирует поток планировщика навсегда. APScheduler по умолчанию не
+    # запускает следующий тик, пока не завершился предыдущий (max_instances=1
+    # для задачи "main_tick"), поэтому одно такое зависание тихо
+    # останавливает не только проверку почты, но и рассылку дней рождения -
+    # они выполняются в одном и том же тике.
+    client = (
+        imaplib.IMAP4_SSL(host, port, timeout=30) if use_ssl
+        else imaplib.IMAP4(host, port, timeout=30)
+    )
 
     try:
         client.login(cfg.get("imap_login", ""), cfg.get("imap_password", ""))
