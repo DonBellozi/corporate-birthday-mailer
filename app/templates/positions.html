@@ -132,13 +132,24 @@
       {% endif %}
       {% if s.reason %}<span class="position-reason"> · {{ s.reason }}</span>{% endif %}
     </div>
+    {% if not x.congratulate %}
+    <div class="position-status muted small">
+      <span class="bad">⛔ Поздравления по этой должности отключены</span>
+    </div>
+    {% endif %}
   </div>
 
   <div class="position-row-edit">
-    <label class="check position-row-active">
-      <input type="checkbox" name="active" {% if x.active %}checked{% endif %}>
-      Использовать в тексте
-    </label>
+    <div class="position-row-checks">
+      <label class="check position-row-active">
+        <input type="checkbox" name="active" {% if x.active %}checked{% endif %}>
+        Использовать в тексте
+      </label>
+      <label class="check position-row-active">
+        <input type="checkbox" name="congratulate" {% if x.congratulate %}checked{% endif %}>
+        Поздравлять
+      </label>
+    </div>
     <input id="pos-input-{{ x.id }}"
            name="display_position"
            aria-label="Должность для поздравления: {{ row.source_title or x.source_position }}"

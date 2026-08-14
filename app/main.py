@@ -965,6 +965,7 @@ async def positions_save(item_id: int, request: Request, db: Session = Depends(g
     item.display_position = str(form.get("display_position", "")).strip()
     item.confirmed = bool(item.display_position)
     item.active = "active" in form
+    item.congratulate = "congratulate" in form
 
     if item.confirmed:
         units, title = split_source_position(item.source_position)
@@ -977,7 +978,8 @@ async def positions_save(item_id: int, request: Request, db: Session = Depends(g
         action="position_changed",
         details=(
             f"{item_id}: {item.display_position}; "
-            f"использовать должность={'да' if item.active else 'нет'}"
+            f"использовать должность={'да' if item.active else 'нет'}; "
+            f"поздравлять={'да' if item.congratulate else 'нет'}"
         ),
     ))
     db.commit()

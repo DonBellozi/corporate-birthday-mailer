@@ -225,6 +225,7 @@ select{width:100%;border:1px solid #cbd2d9;border-radius:5px;padding:9px 10px;fo
   gap:12px;
   align-items:center;
 }
+.position-row-checks{display:flex;flex-direction:column;gap:4px}
 .position-row-active{margin:0;font-size:13px;white-space:nowrap}
 .position-save{margin:0;padding:8px 16px;font-size:13px;white-space:nowrap}
 

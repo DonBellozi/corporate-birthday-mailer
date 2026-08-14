@@ -301,14 +301,29 @@ def birthday_send_eligibility(
     cfg: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
     """
-    Поздравление блокируют только:
+    Поздравление блокируют:
       - признак «Скрыть день рождения» из 1С;
+      - должность, для которой оператор отключил поздравления
+        (PositionMapping.congratulate = False, галка "Поздравлять" на
+        странице "Должности");
       - состояние работника, исключенное оператором или администратором.
 
-    Должность, несколько должностей и рабочий email отправку не блокируют.
+    Текст должности (PositionMapping.active, галка "Использовать в
+    тексте") на возможность отправки не влияет - только на то, упоминается
+    ли должность в письме. Это две независимые галки: можно поздравлять,
+    но без упоминания должности, и наоборот - должность в тексте, но эту
+    конкретную должность решили вообще не поздравлять.
     """
     if getattr(emp, "hide_birthday", False):
         return False, "В 1С установлен запрет «Скрыть день рождения»"
+
+    source_position = (getattr(emp, "source_position", "") or "").strip()
+    if source_position:
+        mapping = db.scalar(select(PositionMapping).where(
+            PositionMapping.source_position == source_position,
+        ))
+        if mapping and not mapping.congratulate:
+            return False, "Поздравления по этой должности отключены"
 
     if cfg is None:
         cfg = get_all_settings(db)
