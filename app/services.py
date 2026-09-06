@@ -334,7 +334,6 @@ def birthday_send_eligibility(
 
     return True, ""
 
-
 def snapshot_size_is_suspicious(current_count: int, previous_count: int, min_ratio: int = 80):
     """
     Возвращает (is_suspicious, percentage).
@@ -500,9 +499,6 @@ def upcoming_birthdays(db, days=30, employees=None, cfg=None):
 
     result = []
     for emp in employees:
-        # Обычная дата рождения ищется как раньше. Для родившихся 29 февраля
-        # проверяем эффективную дату в текущем и в следующем году - этого
-        # достаточно, окно `days` не превышает год.
         key = (emp.birthday_day, emp.birthday_month)
         match = date_map.get(key)
         if not match and emp.birthday_day == 29 and emp.birthday_month == 2:
@@ -561,17 +557,152 @@ def choose_wish(db, gender, seed=""):
 
 
 def choose_card(db, gender, seed=""):
+    """Одиночный выбор оставлен для совместимости и редких fallback-сценариев."""
     items = list(db.scalars(
         select(Card).where(
             Card.active == True,
             Card.gender.in_([gender, "universal"]),
         )
     ).all())
-
-    # Не выбираем запись, если физический файл уже отсутствует.
     items = [x for x in items if card_file_path(x.filename).exists()]
     return choose_least_used(items, seed=seed)
 
+
+def _employee_card_key(emp) -> str:
+    return str(getattr(emp, "employee_key", "") or f"id:{getattr(emp, 'id', '')}")
+
+
+def birthday_target_date(emp, cfg: dict[str, str], start_date: date | None = None) -> date | None:
+    """Ближайшая фактическая дата поздравления, включая правило 29 февраля."""
+    start_date = start_date or date.today()
+    policy = cfg.get("feb29_policy", "feb28")
+
+    for year in range(start_date.year, start_date.year + 3):
+        day, month = effective_birthday(
+            emp.birthday_day,
+            emp.birthday_month,
+            year,
+            policy,
+        )
+        try:
+            candidate = date(year, month, day)
+        except ValueError:
+            continue
+        if candidate >= start_date:
+            return candidate
+    return None
+
+
+def _card_order_hash(target_date: date, employee_key: str, card_id: int) -> bytes:
+    value = f"{target_date.isoformat()}|{employee_key}|{card_id}|birthday-card"
+    return hashlib.sha256(value.encode("utf-8")).digest()
+
+
+def card_assignments_for_date(
+    db,
+    target_date: date,
+    employees=None,
+    cfg: dict[str, str] | None = None,
+) -> dict[str, Card]:
+    """
+    Распределяет открытки сразу между всеми именинниками одной даты.
+
+    Пока существует вариант раздать разные подходящие открытки, повторов
+    не будет. Для male/female учитываются и универсальные карточки, поэтому
+    используем максимальное паросочетание, а не простой жадный выбор.
+
+    Распределение детерминировано датой, работником и id открытки: все
+    предпросмотры одной даты показывают согласованный набор, а на другой
+    день расклад меняется. Если открыток физически меньше, чем именинников,
+    повторы разрешаются только для тех, кому уникальной карточки уже не
+    хватает.
+    """
+    if cfg is None:
+        cfg = get_all_settings(db)
+    if cfg.get("cards_enabled") != "true":
+        return {}
+    if employees is None:
+        employees = resolved_latest_employees(db)
+
+    policy = cfg.get("feb29_policy", "feb28")
+    celebrants = []
+    for emp in employees:
+        day, month = effective_birthday(
+            emp.birthday_day,
+            emp.birthday_month,
+            target_date.year,
+            policy,
+        )
+        if day != target_date.day or month != target_date.month:
+            continue
+        can_send, _ = birthday_send_eligibility(db, emp, cfg=cfg)
+        if can_send:
+            celebrants.append(emp)
+
+    if not celebrants:
+        return {}
+
+    cards = list(db.scalars(select(Card).where(Card.active == True)).all())
+    cards = [card for card in cards if card_file_path(card.filename).exists()]
+    if not cards:
+        return {}
+
+    card_by_id = {card.id: card for card in cards}
+    emp_by_key = {_employee_card_key(emp): emp for emp in celebrants}
+
+    candidates = {}
+    for key, emp in emp_by_key.items():
+        ids = [
+            card.id for card in cards
+            if card.gender in {emp.gender, "universal"}
+        ]
+        ids.sort(key=lambda card_id: _card_order_hash(target_date, key, card_id))
+        candidates[key] = ids
+
+    # Самих работников тоже перемешиваем стабильно относительно даты.
+    employee_keys = sorted(
+        emp_by_key,
+        key=lambda key: hashlib.sha256(
+            f"{target_date.isoformat()}|{key}|employee".encode("utf-8")
+        ).digest(),
+    )
+
+    card_to_employee: dict[int, str] = {}
+    employee_to_card: dict[str, int] = {}
+
+    def try_unique(employee_key: str, seen_cards: set[int]) -> bool:
+        for card_id in candidates.get(employee_key, []):
+            if card_id in seen_cards:
+                continue
+            seen_cards.add(card_id)
+
+            other = card_to_employee.get(card_id)
+            if other is None or try_unique(other, seen_cards):
+                card_to_employee[card_id] = employee_key
+                employee_to_card[employee_key] = card_id
+                return True
+        return False
+
+    for key in employee_keys:
+        try_unique(key, set())
+
+    # Если уникальных совместимых карточек не хватает, повторяем только после
+    # того, как алгоритм уже построил максимально возможный уникальный набор.
+    for key in employee_keys:
+        if key in employee_to_card:
+            continue
+        ids = candidates.get(key, [])
+        if ids:
+            digest = hashlib.sha256(
+                f"{target_date.isoformat()}|{key}|repeat".encode("utf-8")
+            ).digest()
+            employee_to_card[key] = ids[int.from_bytes(digest[:8], "big") % len(ids)]
+
+    return {
+        key: card_by_id[card_id]
+        for key, card_id in employee_to_card.items()
+        if card_id in card_by_id
+    }
 
 def get_position(db, source_position, skip_prefixes=DEFAULT_SKIP_PREFIXES):
     """
@@ -581,11 +712,8 @@ def get_position(db, source_position, skip_prefixes=DEFAULT_SKIP_PREFIXES):
          подтверждениях) с высокой уверенностью;
       3. иначе должность не вставляется.
 
-    Предложение по аналогии с другими подразделениями (см.
-    position_learning.py) сюда никогда не проходит - его уверенность
-    специально держится ниже порога auto_use, потому что оно не проверено
-    оператором именно для этого подразделения. Письмо в таком случае
-    уйдет без должности, а не с ошибочно угаданной.
+    Предложение по аналогии с другими подразделениями сюда никогда не
+    проходит: его уверенность специально ниже порога auto_use.
     """
     if not source_position:
         return ""
@@ -607,10 +735,9 @@ def compose_birthday_message(db, emp):
     """
     Собирает письмо без отправки и без изменения счетчиков использования.
 
-    Выбор текста, пожелания и открытки детерминирован для конкретного
-    сотрудника среди наименее использованных вариантов. Поэтому повторный
-    предпросмотр показывает тот же вариант, пока не изменился фотобанк
-    или счетчики реальных отправок.
+    Текст и пожелание остаются детерминированными для сотрудника. Открытка
+    выбирается как часть общего распределения на дату рождения: разные
+    именинники одного дня получают разные карточки, пока это возможно.
     """
     cfg = get_all_settings(db)
     seed = emp.employee_key or str(emp.id)
@@ -620,7 +747,11 @@ def compose_birthday_message(db, emp):
         raise ValueError("Нет активного текста поздравления")
 
     position = (
-        get_position(db, emp.source_position, parse_skip_prefixes(cfg.get("position_skip_units", "")))
+        get_position(
+            db,
+            emp.source_position,
+            parse_skip_prefixes(cfg.get("position_skip_units", "")),
+        )
         if cfg.get("positions_enabled") == "true"
         else ""
     )
@@ -645,7 +776,17 @@ def compose_birthday_message(db, emp):
     card_path = None
     card_info = None
     if cfg.get("cards_enabled") == "true":
-        card = choose_card(db, emp.gender, seed=f"{seed}:card")
+        target_date = birthday_target_date(emp, cfg)
+        if target_date:
+            assignments = card_assignments_for_date(db, target_date, cfg=cfg)
+            card = assignments.get(_employee_card_key(emp))
+
+        # Fallback нужен только для необычных случаев, когда сотрудник не
+        # входит в актуальный кадровый снимок (например, служебный тест).
+        if card is None:
+            target_seed = target_date.isoformat() if target_date else date.today().isoformat()
+            card = choose_card(db, emp.gender, seed=f"{target_seed}:{seed}:card")
+
         if card:
             card_path = card_file_path(card.filename)
             card_info = card_meta(card.filename)

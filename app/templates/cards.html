@@ -18,12 +18,9 @@
   Ориентация определяется автоматически: горизонтальная, вертикальная или квадратная.
 </p>
 
-<form method="post" action="/cards/upload" enctype="multipart/form-data">
+<form method="post" action="/cards/upload" enctype="multipart/form-data" id="card-upload-form">
+<input type="hidden" name="name" id="card-auto-name" value="">
 <div class="cols">
-  <div>
-    <label>Название</label>
-    <input name="name" placeholder="Например: Синяя открытка 01">
-  </div>
   <div>
     <label>Для кого</label>
     <select name="gender">
@@ -33,6 +30,10 @@
     </select>
   </div>
 </div>
+
+<p class="muted small">
+  Имя присваивается автоматически. При необходимости его можно изменить после загрузки.
+</p>
 
 <label>Изображение</label>
 <input type="file" name="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" required>
@@ -94,4 +95,35 @@
 {% else %}
 <div class="card muted">Фотобанк пока пуст.</div>
 {% endif %}
+
+<script>
+(() => {
+  const form = document.getElementById("card-upload-form");
+  const field = document.getElementById("card-auto-name");
+  if (!form || !field) return;
+
+  form.addEventListener("submit", () => {
+    const now = new Date();
+    const two = (value) => String(value).padStart(2, "0");
+    const stamp =
+      now.getFullYear() +
+      two(now.getMonth() + 1) +
+      two(now.getDate()) + "-" +
+      two(now.getHours()) +
+      two(now.getMinutes()) +
+      two(now.getSeconds());
+
+    let suffix = "";
+    if (window.crypto && window.crypto.getRandomValues) {
+      const value = new Uint32Array(1);
+      window.crypto.getRandomValues(value);
+      suffix = String(value[0] % 10000).padStart(4, "0");
+    } else {
+      suffix = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+    }
+
+    field.value = `Открытка ${stamp}-${suffix}`;
+  });
+})();
+</script>
 {% endblock %}
