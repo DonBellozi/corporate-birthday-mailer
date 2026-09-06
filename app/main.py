@@ -1016,7 +1016,6 @@ def cards_page(request: Request, db: Session = Depends(get_db)):
 @app.post("/cards/upload", response_class=HTMLResponse)
 async def cards_upload(
     request: Request,
-    name: str = Form(""),
     gender: str = Form("universal"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -1030,20 +1029,21 @@ async def cards_upload(
     try:
         data = await file.read()
         filename, meta = save_uploaded_card(data)
-        display_name = name.strip() or Path(file.filename or "Открытка").stem
 
         item = Card(
-            name=display_name[:200],
+            name="Открытка",
             gender=gender,
             filename=filename,
             active=True,
             uploaded_by=actor,
         )
         db.add(item)
+        db.flush()
+        item.name = f"Открытка {item.id:04d}"
         db.add(AuditLog(
             actor=actor,
             action="card_uploaded",
-            details=f"{display_name}; {meta['width']}x{meta['height']}",
+            details=f"{item.name}; {meta['width']}x{meta['height']}",
         ))
         db.commit()
 
