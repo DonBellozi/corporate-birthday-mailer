@@ -23,6 +23,8 @@ from .scheduler import start_scheduler
 from .position_suggester import suggest_position, split_source_position, parse_skip_prefixes
 from .position_learning import suggest_with_learning, record_confirmation
 from .card_service import save_uploaded_card, delete_card_file, card_file_path, card_meta
+from .models import BirthdayExclusion
+from .services import birthday_is_excluded, birthday_target_date
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -201,6 +203,7 @@ def dashboard_fragment(request: Request, db: Session = Depends(get_db)):
             "employee": emp,
             "can_send": can_send,
             "send_reason": send_reason,
+            "birthday_excluded": birthday_is_excluded(db, emp, date.today()),
         })
 
     next_birthdays = upcoming_birthdays(
@@ -234,6 +237,48 @@ def dashboard_fragment(request: Request, db: Session = Depends(get_db)):
             "unconfirmed_count": unconfirmed_count,
         },
     )
+
+@app.post("/birthdays/{employee_id}/exclusion")
+def birthday_exclusion_save(
+    employee_id: int,
+    request: Request,
+    birthday_year: int = Form(...),
+    excluded: bool = Form(...),
+    db: Session = Depends(get_db),
+):
+    actor = require_user(request)
+    snapshot = db.get(EmployeeSnapshot, employee_id)
+    if not snapshot:
+        raise HTTPException(404, "Сотрудник не найден")
+
+    # Открытая страница может относиться к снимку до очередного импорта 1С.
+    emp = next((item for item in resolved_latest_employees(db)
+                if item.employee_key == snapshot.employee_key), None)
+    if not emp:
+        raise HTTPException(409, "Сотрудника нет в актуальной выгрузке. Обновите страницу.")
+    target_date = birthday_target_date(emp, get_all_settings(db))
+    if not target_date or target_date.year != birthday_year:
+        raise HTTPException(409, "Дата дня рождения изменилась. Обновите страницу.")
+
+    item = db.get(BirthdayExclusion, (emp.employee_key, birthday_year))
+    if excluded and item is None:
+        db.add(BirthdayExclusion(
+            employee_key=emp.employee_key,
+            birthday_year=birthday_year,
+            created_by=actor,
+        ))
+    elif not excluded and item is not None:
+        db.delete(item)
+    else:
+        return RedirectResponse("/", 303)
+    db.add(AuditLog(
+        actor=actor,
+        action="birthday_excluded" if excluded else "birthday_exclusion_removed",
+        details=f"{emp.fio}; {emp.employee_key}; {birthday_year}",
+    ))
+    db.commit()
+    return RedirectResponse("/", 303)
+
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):

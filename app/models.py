@@ -61,6 +61,15 @@ class EmployeeSnapshot(Base):
     hide_birthday: Mapped[bool] = mapped_column(Boolean, default=False)
     source_position: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+class BirthdayExclusion(Base):
+    """Разовый запрет, сохраняющийся при замене кадрового снимка."""
+    __tablename__ = "birthday_exclusions"
+    employee_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    birthday_year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_by: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class PositionMapping(Base):
     __tablename__ = "position_mappings"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

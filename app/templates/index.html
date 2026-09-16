@@ -117,6 +117,10 @@
       }
       meta.textContent = `Тема: ${data.subject || "не указана"}`;
       frame.srcdoc = data.html || "";
+      if (data.excluded) {
+        error.textContent = data.warning || "Поздравление отключено";
+        error.hidden = false;
+      }
     } catch (e) {
       meta.textContent = "";
       error.textContent = e.message || "Ошибка предпросмотра";

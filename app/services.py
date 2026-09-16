@@ -15,6 +15,7 @@ from .mail_service import send_html_mail
 from .position_suggester import DEFAULT_SKIP_PREFIXES, parse_skip_prefixes
 from .position_learning import suggest_with_learning
 from .card_service import card_file_path, card_meta, display_width
+from .models import BirthdayExclusion
 
 def latest_successful_import(db):
     return db.scalars(
@@ -295,13 +296,19 @@ def resolved_latest_employees(db) -> list[EmployeeSnapshot]:
     return result
 
 
+def birthday_is_excluded(db, emp, target_date: date) -> bool:
+    return db.get(BirthdayExclusion, (emp.employee_key, target_date.year)) is not None
+
+
 def birthday_send_eligibility(
     db,
     emp,
     cfg: dict[str, str] | None = None,
+    target_date: date | None = None,
 ) -> tuple[bool, str]:
     """
     Поздравление блокируют:
+      - разовая отметка «Не поздравлять» для года предстоящего дня рождения;
       - признак «Скрыть день рождения» из 1С;
       - должность, для которой оператор отключил поздравления
         (PositionMapping.congratulate = False, галка "Поздравлять" на
@@ -314,6 +321,12 @@ def birthday_send_eligibility(
     но без упоминания должности, и наоборот - должность в тексте, но эту
     конкретную должность решили вообще не поздравлять.
     """
+    if cfg is None:
+        cfg = get_all_settings(db)
+    target_date = target_date or birthday_target_date(emp, cfg)
+    if target_date and birthday_is_excluded(db, emp, target_date):
+        return False, f"Поздравление в {target_date.year} году отключено вручную"
+
     if getattr(emp, "hide_birthday", False):
         return False, "В 1С установлен запрет «Скрыть день рождения»"
 
@@ -324,9 +337,6 @@ def birthday_send_eligibility(
         ))
         if mapping and not mapping.congratulate:
             return False, "Поздравления по этой должности отключены"
-
-    if cfg is None:
-        cfg = get_all_settings(db)
 
     if not employee_state_is_allowed(emp, cfg):
         state = getattr(emp, "employee_state", "") or "Не указано"
@@ -511,11 +521,12 @@ def upcoming_birthdays(db, days=30, employees=None, cfg=None):
             continue
 
         next_date, days_left = match
-        can_send, send_reason = birthday_send_eligibility(db, emp, cfg=cfg)
+        can_send, send_reason = birthday_send_eligibility(db, emp, cfg=cfg, target_date=next_date)
         result.append({
             "employee": emp,
             "next_date": next_date,
             "days_left": days_left,
+            "birthday_excluded": birthday_is_excluded(db, emp, next_date),
             "can_send": can_send,
             "send_reason": send_reason,
         })
@@ -635,7 +646,7 @@ def card_assignments_for_date(
         )
         if day != target_date.day or month != target_date.month:
             continue
-        can_send, _ = birthday_send_eligibility(db, emp, cfg=cfg)
+        can_send, _ = birthday_send_eligibility(db, emp, cfg=cfg, target_date=target_date)
         if can_send:
             celebrants.append(emp)
 
@@ -868,7 +879,7 @@ def build_birthday_preview(db, emp):
 
 
 def send_birthday(db, emp, actor="scheduler"):
-    can_send, reason = birthday_send_eligibility(db, emp)
+    can_send, reason = birthday_send_eligibility(db, emp, target_date=date.today())
     if not can_send:
         return False, reason
 

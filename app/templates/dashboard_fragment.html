@@ -34,6 +34,12 @@
       <button type="submit" class="send-now">Отправить сейчас</button>
     </form>
     {% endif %}
+    <form method="post" action="/birthdays/{{ x.id }}/exclusion">
+      <input type="hidden" name="birthday_year" value="{{ today_date.year }}">
+      <button type="submit" name="excluded" value="{{ 'false' if row.birthday_excluded else 'true' }}">
+        {{ 'Вернуть поздравление' if row.birthday_excluded else 'Не поздравлять' }}
+      </button>
+    </form>
   </td>
 </tr>
 {% endfor %}
@@ -45,11 +51,12 @@
 
 <div class="card">
 <h2>Ближайшие дни рождения · 30 дней</h2>
+<p class="muted small">«Не поздравлять» отключает рассылку только на указанный день рождения. Отметку можно отменить кнопкой «Вернуть поздравление».</p>
 {% if next_birthdays %}
 <table>
 <tr>
   <th>Дата</th><th>Через</th><th>ФИО</th><th>Пол</th>
-  <th>Состояние</th><th>Отправка</th><th>Просмотр</th>
+  <th>Состояние</th><th>Отправка</th><th>Действия</th>
 </tr>
 {% for item in next_birthdays %}
 <tr>
@@ -63,12 +70,19 @@
       <span class="ok">Можно</span>
     {% else %}
       <span class="bad" title="{{ item.send_reason }}">Не поздравлять</span>
+      <div class="muted small">{{ item.send_reason }}</div>
     {% endif %}
   </td>
   <td>
     <button type="button" class="preview-btn"
             data-employee-id="{{ item.employee.id }}"
             data-fio="{{ item.employee.fio|e }}">Просмотр</button>
+    <form method="post" action="/birthdays/{{ item.employee.id }}/exclusion">
+      <input type="hidden" name="birthday_year" value="{{ item.next_date.year }}">
+      <button type="submit" name="excluded" value="{{ 'false' if item.birthday_excluded else 'true' }}">
+        {{ 'Вернуть поздравление' if item.birthday_excluded else 'Не поздравлять' }}
+      </button>
+    </form>
   </td>
 </tr>
 {% endfor %}
