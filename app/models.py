@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
@@ -146,10 +146,20 @@ class Card(Base):
     gender: Mapped[str] = mapped_column(String(20), default="universal")
     filename: Mapped[str] = mapped_column(String(255))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    personal_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     uploaded_by: Mapped[str] = mapped_column(String(255), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class BirthdayCardChoice(Base):
+    __tablename__ = "birthday_card_choices"
+    employee_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    birthday_year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    card_id: Mapped[int | None] = mapped_column(ForeignKey("cards.id", ondelete="SET NULL"), nullable=True)
+    updated_by: Mapped[str] = mapped_column(String(255), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
 class MailLog(Base):
     __tablename__ = "mail_logs"

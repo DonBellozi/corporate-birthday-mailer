@@ -29,6 +29,8 @@
   </td>
   <td>
     <button type="button" class="preview-btn" data-employee-id="{{ x.id }}" data-fio="{{ x.fio|e }}">Просмотр</button>
+    <a class="card-choice-link" href="/birthdays/{{ x.id }}/card?birthday_year={{ today_date.year }}">Выбрать открытку</a>
+    {% if row.personal_card %}<div class="ok small">Открытка выбрана вручную</div>{% endif %}
     {% if row.can_send %}
     <form method="post" action="/today/{{ x.id }}/send">
       <button type="submit" class="send-now">Отправить сейчас</button>
@@ -77,6 +79,8 @@
     <button type="button" class="preview-btn"
             data-employee-id="{{ item.employee.id }}"
             data-fio="{{ item.employee.fio|e }}">Просмотр</button>
+    <a class="card-choice-link" href="/birthdays/{{ item.employee.id }}/card?birthday_year={{ item.next_date.year }}">Выбрать открытку</a>
+    {% if item.personal_card %}<div class="ok small">Открытка выбрана вручную</div>{% endif %}
     <form method="post" action="/birthdays/{{ item.employee.id }}/exclusion">
       <input type="hidden" name="birthday_year" value="{{ item.next_date.year }}">
       <button type="submit" name="excluded" value="{{ 'false' if item.birthday_excluded else 'true' }}">

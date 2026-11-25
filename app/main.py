@@ -23,14 +23,22 @@ from .scheduler import start_scheduler
 from .position_suggester import suggest_position, split_source_position, parse_skip_prefixes
 from .position_learning import suggest_with_learning, record_confirmation
 from .card_service import save_uploaded_card, delete_card_file, card_file_path, card_meta
-from .models import BirthdayExclusion
-from .services import birthday_is_excluded, birthday_target_date
+from .models import BirthdayExclusion, BirthdayCardChoice
+from .services import birthday_is_excluded, birthday_target_date, birthday_card_choice
+from .card_service import MAX_UPLOAD_BYTES
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 def bootstrap():
     Base.metadata.create_all(bind=engine)
+
+    card_columns = {col["name"] for col in inspect(engine).get_columns("cards")}
+    if "personal_only" not in card_columns:
+        with engine.begin() as conn:
+            conn.execute(sql_text(
+                "ALTER TABLE cards ADD COLUMN personal_only BOOLEAN NOT NULL DEFAULT FALSE"
+            ))
 
     # create_all() не добавляет новые колонки в уже существующие таблицы.
     # Делаем маленькую безопасную миграцию для поля "Состояние".
@@ -204,6 +212,7 @@ def dashboard_fragment(request: Request, db: Session = Depends(get_db)):
             "can_send": can_send,
             "send_reason": send_reason,
             "birthday_excluded": birthday_is_excluded(db, emp, date.today()),
+            "personal_card": birthday_card_choice(db, emp, date.today()) is not None,
         })
 
     next_birthdays = upcoming_birthdays(
@@ -1031,9 +1040,111 @@ async def positions_save(item_id: int, request: Request, db: Session = Depends(g
     return RedirectResponse("/positions", 303)
 
 
+def _birthday_card_target(db, employee_id, birthday_year):
+    snapshot = db.get(EmployeeSnapshot, employee_id)
+    if not snapshot:
+        raise HTTPException(404, "Сотрудник не найден")
+    emp = next((item for item in resolved_latest_employees(db)
+                if item.employee_key == snapshot.employee_key), None)
+    if emp is None:
+        raise HTTPException(409, "Сотрудника нет в актуальной выгрузке. Обновите обзор.")
+    cfg = get_all_settings(db)
+    target = birthday_target_date(emp, cfg)
+    if target is None or target.year != birthday_year:
+        raise HTTPException(409, "День рождения уже прошёл или дата изменилась. Обновите обзор.")
+    return emp, target, cfg
+
+
+def _birthday_card_page(request, db, emp, target, cfg, error=None, saved=False):
+    choice = birthday_card_choice(db, emp, target)
+    selected = db.get(Card, choice.card_id) if choice and choice.card_id else None
+    selected_meta = card_meta(selected.filename) if selected else {}
+    rows = [row for row in _card_rows(db)
+            if row["item"].active and row["meta"]["exists"]
+            and row["item"].gender in {emp.gender, "universal"}]
+    sent = db.scalar(select(MailLog).where(
+        MailLog.employee_key == emp.employee_key,
+        MailLog.birthday_year == target.year,
+        MailLog.status.in_(["sent", "sending"]),
+    )) is not None
+    response = page(request, "birthday_card.html", employee=emp, target_date=target,
+                    cfg=cfg, choice=choice, selected=selected, selected_meta=selected_meta,
+                    rows=rows, error=error, saved=saved, sent=sent)
+    if error:
+        response.status_code = 400
+    return response
+
+
+@app.get("/birthdays/{employee_id}/card", response_class=HTMLResponse)
+def birthday_card_page(employee_id: int, request: Request, birthday_year: int,
+                       saved: bool = False, db: Session = Depends(get_db)):
+    require_user(request)
+    emp, target, cfg = _birthday_card_target(db, employee_id, birthday_year)
+    return _birthday_card_page(request, db, emp, target, cfg, saved=saved)
+
+
+@app.post("/birthdays/{employee_id}/card", response_class=HTMLResponse)
+async def birthday_card_save(
+    employee_id: int, request: Request, birthday_year: int = Form(...),
+    mode: str = Form(...), card_id: int | None = Form(None),
+    file: UploadFile | None = File(None), db: Session = Depends(get_db),
+):
+    actor = require_user(request)
+    emp, target, cfg = _birthday_card_target(db, employee_id, birthday_year)
+    filename = None
+    try:
+        if db.scalar(select(MailLog).where(
+            MailLog.employee_key == emp.employee_key,
+            MailLog.birthday_year == target.year,
+            MailLog.status.in_(["sent", "sending"]),
+        )):
+            raise ValueError("Поздравление уже отправлено или отправляется. Заменить открытку нельзя.")
+        if mode not in {"library", "upload", "auto"}:
+            raise ValueError("Неизвестный способ выбора открытки.")
+        choice = birthday_card_choice(db, emp, target)
+        card = None
+        if mode == "library":
+            card = db.get(Card, card_id) if card_id else None
+            if (card is None or not card.active or card.personal_only
+                    or card.gender not in {emp.gender, "universal"}
+                    or not card_meta(card.filename).get("exists")):
+                raise ValueError("Выберите доступную подходящую открытку из фотобанка.")
+        elif mode == "upload":
+            if file is None or not file.filename:
+                raise ValueError("Выберите PNG или JPEG для загрузки.")
+            filename, _ = save_uploaded_card(await file.read(MAX_UPLOAD_BYTES + 1))
+            card = Card(name="Персональная открытка", filename=filename,
+                        gender="universal", active=True, personal_only=True, uploaded_by=actor)
+            db.add(card)
+            db.flush()
+            card.name = f"Персональная открытка {card.id:04d}"
+
+        if mode == "auto":
+            if choice is not None:
+                db.delete(choice)
+        else:
+            if choice is None:
+                choice = BirthdayCardChoice(employee_key=emp.employee_key, birthday_year=target.year)
+                db.add(choice)
+            choice.card_id = card.id
+            choice.updated_by = actor
+        db.add(AuditLog(actor=actor, action="birthday_card_changed",
+                        details=f"{emp.fio}; {emp.employee_key}; {target.year}; "
+                                f"{card.name if card else 'Автоматический подбор'}"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        if filename:
+            delete_card_file(filename)
+        error = str(exc) if isinstance(exc, ValueError) else "Не удалось сохранить открытку. Повторите попытку."
+        return _birthday_card_page(request, db, emp, target, cfg, error=error)
+    return RedirectResponse(f"/birthdays/{emp.id}/card?birthday_year={target.year}&saved=true", 303)
+
+
 def _card_rows(db):
     items = list(db.scalars(
-        select(Card).order_by(Card.active.desc(), Card.created_at.desc(), Card.id.desc())
+        select(Card).where(Card.personal_only == False)
+        .order_by(Card.active.desc(), Card.created_at.desc(), Card.id.desc())
     ).all())
     return [
         {
@@ -1115,7 +1226,7 @@ async def cards_upload(
 async def cards_save(item_id: int, request: Request, db: Session = Depends(get_db)):
     actor = require_user(request)
     item = db.get(Card, item_id)
-    if not item:
+    if not item or item.personal_only:
         raise HTTPException(404)
 
     form = await request.form()
@@ -1140,11 +1251,16 @@ async def cards_save(item_id: int, request: Request, db: Session = Depends(get_d
 def cards_delete(item_id: int, request: Request, db: Session = Depends(get_db)):
     actor = require_user(request)
     item = db.get(Card, item_id)
-    if not item:
+    if not item or item.personal_only:
         raise HTTPException(404)
 
     filename = item.filename
     name = item.name
+    # Сохраняем сам факт ручного выбора: после удаления нельзя незаметно
+    # заменить выбранную оператором открытку случайной.
+    for choice in db.scalars(select(BirthdayCardChoice).where(BirthdayCardChoice.card_id == item_id)):
+        choice.card_id = None
+    db.flush()
     db.delete(item)
     db.add(AuditLog(
         actor=actor,

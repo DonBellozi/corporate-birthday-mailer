@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="/">← К обзору</a>
+<h1>Выбрать открытку</h1>
+<p><strong>{{ employee.fio }}</strong> · {{ target_date.strftime("%d.%m.%Y") }}</p>
+<p class="muted">Выбор сохранится для этого дня рождения, в том числе после новых выгрузок из 1С. На следующий год снова будет действовать автоматический подбор.</p>
+{% if saved %}<div class="alert success">Выбор сохранён. Открытку можно проверить через «Просмотр» в обзоре.</div>{% endif %}
+{% if error %}<div class="alert error" role="alert">{{ error }}</div>{% endif %}
+{% if cfg.get('cards_enabled') != 'true' %}
+<div class="alert warning">Вставка открыток отключена в настройках. Выбор можно сохранить, но картинка попадёт в письмо только после включения открыток.</div>
+{% endif %}
+{% if sent %}<div class="alert">Поздравление уже отправлено или отправляется. Изменение открытки недоступно.</div>{% endif %}
+<div class="card">
+  <h2>Текущий выбор</h2>
+  {% if choice %}
+    {% if selected and selected.active and selected_meta.get('exists') %}
+      <p>{{ selected.name }}</p>
+      <img class="card-choice-current" src="/cards/{{ selected.id }}/image" alt="{{ selected.name }}">
+      {% if selected.personal_only %}<p class="muted small">Личная загрузка: другим сотрудникам автоматически не назначается.</p>{% endif %}
+    {% else %}
+      <p class="bad">Выбранная открытка недоступна. Выберите другую или верните автоматический подбор, чтобы поздравление могло быть отправлено.</p>
+    {% endif %}
+    {% if not sent %}
+    <form method="post">
+      <input type="hidden" name="birthday_year" value="{{ target_date.year }}">
+      <button type="submit" name="mode" value="auto">Вернуть автоматический подбор</button>
+    </form>
+    {% endif %}
+  {% else %}
+    <p>Автоматический подбор из фотобанка.</p>
+  {% endif %}
+</div>
+{% if not sent %}
+<div class="card">
+  <h2>Загрузить персональную открытку</h2>
+  <p class="muted">PNG или JPEG до 15 МБ. Изображение будет доступно только для этого поздравления и не попадёт в общий автоподбор.</p>
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="birthday_year" value="{{ target_date.year }}">
+    <label for="personal-card-file">Изображение</label>
+    <input id="personal-card-file" type="file" name="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" required>
+    <button type="submit" name="mode" value="upload">Загрузить и выбрать</button>
+  </form>
+</div>
+<div class="card">
+  <h2>Выбрать из фотобанка</h2>
+  <p class="muted">Доступные открытки с учётом пола сотрудника. Ручной выбор имеет приоритет; остальным именинникам система подберёт другие картинки, пока их хватает. Если вручную выбрать одну открытку нескольким людям, она будет использована для каждого из них.</p>
+  {% if rows %}
+  <form method="post">
+    <input type="hidden" name="birthday_year" value="{{ target_date.year }}">
+    <div class="photo-grid">
+    {% for row in rows %}
+      <label class="photo-card card-choice-option">
+        <span class="photo-preview"><img src="/cards/{{ row.item.id }}/image" alt="{{ row.item.name }}" loading="lazy"></span>
+        <input type="radio" name="card_id" value="{{ row.item.id }}" required {% if choice and choice.card_id == row.item.id %}checked{% endif %}>
+        {{ row.item.name }}
+      </label>
+    {% endfor %}
+    </div>
+    <button type="submit" name="mode" value="library">Сохранить выбранную открытку</button>
+  </form>
+  {% else %}<p class="muted">Подходящих открыток нет. Можно загрузить персональную открытку выше.</p>{% endif %}
+</div>
+{% endif %}
+{% endblock %}
