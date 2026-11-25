@@ -15,7 +15,7 @@ from .mail_service import send_html_mail
 from .position_suggester import DEFAULT_SKIP_PREFIXES, parse_skip_prefixes
 from .position_learning import suggest_with_learning
 from .card_service import card_file_path, card_meta, display_width
-from .models import BirthdayExclusion, BirthdayCardChoice
+from .models import BirthdayExclusion, BirthdayCardChoice, BirthdayTextChoice
 
 def latest_successful_import(db):
     return db.scalars(
@@ -536,6 +536,7 @@ def upcoming_birthdays(db, days=30, employees=None, cfg=None):
             "days_left": days_left,
             "birthday_excluded": birthday_is_excluded(db, emp, next_date),
             "personal_card": birthday_card_choice(db, emp, next_date) is not None,
+            "personal_text": birthday_text_choice(db, emp, next_date) is not None,
             "can_send": can_send,
             "send_reason": send_reason,
         })
@@ -616,6 +617,10 @@ def birthday_target_date(emp, cfg: dict[str, str], start_date: date | None = Non
 
 def birthday_card_choice(db, emp, target_date):
     return db.get(BirthdayCardChoice, (emp.employee_key, target_date.year))
+
+
+def birthday_text_choice(db, emp, target_date):
+    return db.get(BirthdayTextChoice, (emp.employee_key, target_date.year))
 
 
 def selected_birthday_card(db, choice):
@@ -779,21 +784,11 @@ def get_position(db, source_position, skip_prefixes=DEFAULT_SKIP_PREFIXES):
     suggestion = suggest_with_learning(db, source_position, skip_prefixes)
     return suggestion.text if suggestion.auto_use else ""
 
-def compose_birthday_message(db, emp):
-    """
-    Собирает письмо без отправки и без изменения счетчиков использования.
-
-    Текст и пожелание остаются детерминированными для сотрудника. Открытка
-    выбирается как часть общего распределения на дату рождения: разные
-    именинники одного дня получают разные карточки, пока это возможно.
-    """
-    cfg = get_all_settings(db)
+def compose_birthday_text(db, emp, cfg=None):
+    """Текущий готовый текст для редактора, предпросмотра и отправки."""
+    if cfg is None:
+        cfg = get_all_settings(db)
     seed = emp.employee_key or str(emp.id)
-
-    intro = choose_intro(db, seed=f"{seed}:intro")
-    if not intro:
-        raise ValueError("Нет активного текста поздравления")
-
     position = (
         get_position(
             db,
@@ -803,6 +798,20 @@ def compose_birthday_message(db, emp):
         if cfg.get("positions_enabled") == "true"
         else ""
     )
+
+    target = birthday_target_date(emp, cfg)
+    personal = birthday_text_choice(db, emp, target) if target else None
+    if personal is not None:
+        return {
+            "intro": None, "wish": None, "position": position,
+            "intro_text": personal.intro_text,
+            "wish_text": personal.wish_text if cfg.get("wishes_enabled") == "true" else "",
+            "personal_text": True,
+        }
+
+    intro = choose_intro(db, seed=f"{seed}:intro")
+    if not intro:
+        raise ValueError("Нет активного текста поздравления")
 
     ctx = variable_context({
         "fio": emp.fio,
@@ -819,6 +828,20 @@ def compose_birthday_message(db, emp):
         wish = choose_wish(db, emp.gender, seed=f"{seed}:wish")
         if wish:
             wish_text = render_text(wish.body, ctx)
+
+    return {
+        "intro": intro, "wish": wish, "position": position,
+        "intro_text": intro_text, "wish_text": wish_text, "personal_text": False,
+    }
+
+
+def compose_birthday_message(db, emp):
+    """Собирает письмо; одноразовые текст и открытка имеют приоритет."""
+    cfg = get_all_settings(db)
+    seed = emp.employee_key or str(emp.id)
+    text = compose_birthday_text(db, emp, cfg)
+    intro, wish = text["intro"], text["wish"]
+    intro_text, wish_text, position = text["intro_text"], text["wish_text"], text["position"]
 
     card = None
     card_path = None
@@ -876,6 +899,7 @@ def compose_birthday_message(db, emp):
         "card_cid": cid,
         "intro_text": intro_text,
         "wish_text": wish_text,
+        "personal_text": text["personal_text"],
         "position": position,
         "recipient": recipient,
         "subject": subject,
@@ -906,8 +930,9 @@ def build_birthday_preview(db, emp):
         "subject": message["subject"],
         "recipient": message["recipient"],
         "position": message["position"],
-        "intro_name": message["intro"].name if message["intro"] else "",
-        "wish_name": message["wish"].name if message["wish"] else "",
+        "intro_name": "Персональное поздравление" if message["personal_text"] else (message["intro"].name if message["intro"] else ""),
+        "wish_name": ("Персональное пожелание" if message["wish_text"] else "") if message["personal_text"] else (message["wish"].name if message["wish"] else ""),
+        "personal_text": message["personal_text"],
         "card_name": card.name if card else "",
         "card_orientation": (
             (message["card_info"] or {}).get("orientation_label", "")
@@ -984,8 +1009,9 @@ def send_birthday(db, emp, actor="scheduler"):
         log.sent_at = datetime.utcnow()
 
         intro = message["intro"]
-        intro.usage_count += 1
-        intro.last_used_at = datetime.utcnow()
+        if intro:
+            intro.usage_count += 1
+            intro.last_used_at = datetime.utcnow()
 
         wish = message["wish"]
         if wish:

@@ -58,6 +58,10 @@ def validate_template(template):
 def render_text(template, ctx):
     return VARIABLE_RE.sub(lambda m: ctx.get(m.group(1), m.group(0)), template)
 
+def _plain_text_html(value):
+    return html.escape(value).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>\n")
+
+
 def email_html(
     intro_text,
     wish_text="",
@@ -80,7 +84,7 @@ def email_html(
         wish_block = (
             f'<tr><td style="padding:0 38px 28px 38px;font-family:&quot;Times New Roman&quot;,Times,serif;'
             f'font-size:20pt;font-style:italic;font-weight:700;line-height:1.6;'
-            f'color:{text_color};">{html.escape(wish_text)}</td></tr>'
+            f'color:{text_color};">{_plain_text_html(wish_text)}</td></tr>'
         )
 
     card_block = ""
@@ -101,7 +105,7 @@ def email_html(
 <tr><td align="center" style="padding:24px 12px;">
 <table width="960" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:960px;background:#ffffff;">
 <tr><td style="padding:32px 38px 16px 38px;font-family:&quot;Times New Roman&quot;,Times,serif;font-size:20pt;font-style:italic;font-weight:700;line-height:1.55;color:{text_color};">Добрый день!</td></tr>
-<tr><td style="padding:6px 38px 24px 38px;font-family:&quot;Times New Roman&quot;,Times,serif;font-size:20pt;font-style:italic;font-weight:700;line-height:1.55;color:{text_color};">{html.escape(intro_text)}</td></tr>
+<tr><td style="padding:6px 38px 24px 38px;font-family:&quot;Times New Roman&quot;,Times,serif;font-size:20pt;font-style:italic;font-weight:700;line-height:1.55;color:{text_color};">{_plain_text_html(intro_text)}</td></tr>
 {position_block}
 {wish_block}
 {card_block}

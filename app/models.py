@@ -161,6 +161,17 @@ class BirthdayCardChoice(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class BirthdayTextChoice(Base):
+    """Готовый одноразовый текст, не являющийся шаблоном общего банка."""
+    __tablename__ = "birthday_text_choices"
+    employee_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    birthday_year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    intro_text: Mapped[str] = mapped_column(Text)
+    wish_text: Mapped[str] = mapped_column(Text, default="")
+    updated_by: Mapped[str] = mapped_column(String(255), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class MailLog(Base):
     __tablename__ = "mail_logs"
     __table_args__ = (

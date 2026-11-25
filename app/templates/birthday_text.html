@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<a href="/">← К обзору</a>
+<h1>Персональное поздравление</h1>
+<p><strong>{{ employee.fio }}</strong> · {{ target_date.strftime("%d.%m.%Y") }}</p>
+<p class="muted">Изменения относятся только к этому дню рождения. Они сохранятся после выгрузок из 1С и не попадут в общие банки поздравлений и пожеланий. На следующий год снова будет действовать стандартный подбор.</p>
+{% if saved %}<div class="alert success">Выбор текста сохранён. Проверьте итоговое письмо через «Просмотр» в обзоре.</div>{% endif %}
+{% if error %}<div class="alert error" role="alert">{{ error }}</div>{% endif %}
+{% if seed_error %}<div class="alert warning">{{ seed_error }}. Вы можете написать персональное поздравление ниже.</div>{% endif %}
+{% if sent %}<div class="alert">Поздравление уже отправлено или отправляется. Изменение текста недоступно.</div>{% endif %}
+{% if cfg.get('wishes_enabled') != 'true' %}
+<div class="alert warning">Пожелания отключены в настройках. Персональное пожелание сохранится, но появится в письме только после включения пожеланий. Основной текст поздравления используется независимо от этой настройки.</div>
+{% endif %}
+<div class="card">
+  <h2>{{ 'Сохранённый персональный текст' if choice else 'Текущее поздравление — основа для редактирования' }}</h2>
+  <p class="muted small">Здесь готовый текст с подставленным именем сотрудника. Измените его и сохраните. Форматирование письма, приветствие «Добрый день!» и открытка сохраняются; переносы строк будут видны в письме.</p>
+  <form method="post">
+    <input type="hidden" name="birthday_year" value="{{ target_date.year }}">
+    <label for="birthday-intro">Основной текст поздравления</label>
+    <textarea id="birthday-intro" name="intro_text" rows="7" maxlength="10000" required {% if sent %}readonly{% endif %}>{{ draft.intro_text }}</textarea>
+    <label for="birthday-wish">Пожелание</label>
+    <textarea id="birthday-wish" name="wish_text" rows="6" maxlength="10000" {% if sent %}readonly{% endif %}>{{ draft.wish_text }}</textarea>
+    <p class="muted small">Можно оставить пожелание пустым — тогда его не будет в этом поздравлении. Оба поля сохраняются только для этого человека; это обычный текст без HTML и шаблонных переменных.</p>
+    {% if not sent %}<button type="submit" name="mode" value="save">Сохранить только на этот день рождения</button>{% endif %}
+  </form>
+  {% if choice and not sent %}
+  <form method="post">
+    <input type="hidden" name="birthday_year" value="{{ target_date.year }}">
+    <button type="submit" name="mode" value="auto">Вернуть стандартный текст</button>
+  </form>
+  {% endif %}
+</div>
+<a class="card-choice-link" href="/birthdays/{{ employee.id }}/card?birthday_year={{ target_date.year }}">Выбрать открытку</a>
+<a class="card-choice-link" href="/">К обзору и предпросмотру</a>
+{% endblock %}

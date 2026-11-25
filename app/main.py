@@ -23,8 +23,8 @@ from .scheduler import start_scheduler
 from .position_suggester import suggest_position, split_source_position, parse_skip_prefixes
 from .position_learning import suggest_with_learning, record_confirmation
 from .card_service import save_uploaded_card, delete_card_file, card_file_path, card_meta
-from .models import BirthdayExclusion, BirthdayCardChoice
-from .services import birthday_is_excluded, birthday_target_date, birthday_card_choice
+from .models import BirthdayExclusion, BirthdayCardChoice, BirthdayTextChoice
+from .services import birthday_is_excluded, birthday_target_date, birthday_card_choice, birthday_text_choice, compose_birthday_text
 from .card_service import MAX_UPLOAD_BYTES
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -213,6 +213,7 @@ def dashboard_fragment(request: Request, db: Session = Depends(get_db)):
             "send_reason": send_reason,
             "birthday_excluded": birthday_is_excluded(db, emp, date.today()),
             "personal_card": birthday_card_choice(db, emp, date.today()) is not None,
+            "personal_text": birthday_text_choice(db, emp, date.today()) is not None,
         })
 
     next_birthdays = upcoming_birthdays(
@@ -1053,6 +1054,91 @@ def _birthday_card_target(db, employee_id, birthday_year):
     if target is None or target.year != birthday_year:
         raise HTTPException(409, "День рождения уже прошёл или дата изменилась. Обновите обзор.")
     return emp, target, cfg
+
+
+def _birthday_text_page(request, db, emp, target, cfg, error=None, saved=False, draft=None):
+    choice = birthday_text_choice(db, emp, target)
+    seed_error = None
+    if draft is None:
+        if choice is not None:
+            draft = {"intro_text": choice.intro_text, "wish_text": choice.wish_text}
+        else:
+            try:
+                draft = compose_birthday_text(db, emp, cfg)
+            except ValueError as exc:
+                draft = {"intro_text": "", "wish_text": ""}
+                seed_error = str(exc)
+    sent = db.scalar(select(MailLog).where(
+        MailLog.employee_key == emp.employee_key,
+        MailLog.birthday_year == target.year,
+        MailLog.status.in_(["sent", "sending"]),
+    )) is not None
+    response = page(request, "birthday_text.html", employee=emp, target_date=target,
+                    cfg=cfg, choice=choice, draft=draft, sent=sent, error=error,
+                    saved=saved, seed_error=seed_error)
+    if error:
+        response.status_code = 400
+    return response
+
+
+@app.get("/birthdays/{employee_id}/text", response_class=HTMLResponse)
+def birthday_text_page(employee_id: int, request: Request, birthday_year: int,
+                       saved: bool = False, db: Session = Depends(get_db)):
+    require_user(request)
+    emp, target, cfg = _birthday_card_target(db, employee_id, birthday_year)
+    return _birthday_text_page(request, db, emp, target, cfg, saved=saved)
+
+
+@app.post("/birthdays/{employee_id}/text", response_class=HTMLResponse)
+def birthday_text_save(
+    employee_id: int, request: Request, birthday_year: int = Form(...),
+    mode: str = Form(...), intro_text: str = Form(""), wish_text: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    actor = require_user(request)
+    emp, target, cfg = _birthday_card_target(db, employee_id, birthday_year)
+    draft = {
+        "intro_text": intro_text.replace("\r\n", "\n").replace("\r", "\n").strip(),
+        "wish_text": wish_text.replace("\r\n", "\n").replace("\r", "\n").strip(),
+    }
+    try:
+        if db.scalar(select(MailLog).where(
+            MailLog.employee_key == emp.employee_key,
+            MailLog.birthday_year == target.year,
+            MailLog.status.in_(["sent", "sending"]),
+        )):
+            raise ValueError("Поздравление уже отправлено или отправляется. Изменить текст нельзя.")
+        if mode not in {"save", "auto"}:
+            raise ValueError("Неизвестное действие.")
+        choice = birthday_text_choice(db, emp, target)
+        if mode == "auto":
+            if choice is not None:
+                db.delete(choice)
+        else:
+            if not draft["intro_text"]:
+                raise ValueError("Основной текст поздравления не может быть пустым.")
+            if any(len(value) > 10000 for value in draft.values()):
+                raise ValueError("Каждое поле может содержать не более 10 000 символов.")
+            if any("\x00" in value for value in draft.values()):
+                raise ValueError("Текст содержит недопустимый нулевой символ.")
+            if choice is None:
+                choice = BirthdayTextChoice(employee_key=emp.employee_key, birthday_year=target.year)
+                db.add(choice)
+            choice.intro_text = draft["intro_text"]
+            choice.wish_text = draft["wish_text"]
+            choice.updated_by = actor
+        db.add(AuditLog(
+            actor=actor,
+            action="birthday_text_changed" if mode == "save" else "birthday_text_reset",
+            details=f"{emp.fio}; {emp.employee_key}; {target.year}",
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        error = str(exc) if isinstance(exc, ValueError) else "Не удалось сохранить текст. Повторите попытку."
+        return _birthday_text_page(request, db, emp, target, cfg, error=error,
+                                   draft=draft if mode != "auto" else None)
+    return RedirectResponse(f"/birthdays/{emp.id}/text?birthday_year={target.year}&saved=true", 303)
 
 
 def _birthday_card_page(request, db, emp, target, cfg, error=None, saved=False):
